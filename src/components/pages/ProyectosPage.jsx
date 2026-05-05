@@ -1,66 +1,12 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { StatusTag } from '../common/StatusTag';
+import { MultiSelect } from '../common/MultiSelect';
 
 const ESTADO_GROUPS = [
   { label: 'En producción', options: ['Ingeniería', 'Corte y Plegado', 'Metalurgia', 'Metalurgia Tigre', 'Inoxidable', 'Pintura', 'Montaje'] },
   { label: 'Cierre', options: ['Próximo a terminar', 'Próximo a entregar', 'Entregado', 'Entregado a NQN'] },
   { label: 'Otros', options: ['Sin empezar', 'Stand by', 'Cancelado'] },
 ];
-
-function MultiSelect({ label, options, optgroups, selected, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [open]);
-
-  function toggle(val) {
-    onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
-  }
-
-  const allOptions = optgroups ? optgroups.flatMap(g => g.options) : (options ?? []);
-  const displayLabel = selected.length === 0 ? label
-    : selected.length === 1 ? selected[0]
-    : `${selected.length} seleccionados`;
-
-  return (
-    <div ref={ref} className="ms-wrap">
-      <button className="sf ms-btn" onClick={() => setOpen(o => !o)} type="button">
-        <span className="ms-label">{displayLabel}</span>
-        <span className="ms-arrow">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && (
-        <div className="ms-dropdown">
-          {selected.length > 0 && (
-            <button className="ms-clear" onClick={() => onChange([])}>Limpiar selección</button>
-          )}
-          {optgroups ? optgroups.map(g => (
-            <div key={g.label}>
-              <div className="ms-group-label">{g.label}</div>
-              {g.options.map(opt => (
-                <label key={opt} className="ms-option">
-                  <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          )) : allOptions.map(opt => (
-            <label key={opt} className="ms-option">
-              <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-              {opt}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ClientGroup({ cliente, projs, onOpenDetail }) {
   const [open, setOpen] = useState(true);

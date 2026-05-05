@@ -1,6 +1,16 @@
 import { useRef } from 'react';
 import * as XLSX from 'xlsx';
 
+function parsePercent(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'string') {
+    const n = parseFloat(value.replace('%', ''));
+    return isNaN(n) ? null : Math.round(n);
+  }
+  if (typeof value === 'number') return Math.round(value * 100);
+  return null;
+}
+
 function parseExcelDate(value) {
   if (value === null || value === undefined || value === '') return '—';
   // Excel serial 0 or 1 = "00/01/1900" / "01/01/1900" = sin fecha real
@@ -38,7 +48,10 @@ function mapRowsToProjects(rows) {
   const idxInicio  = col('inicio', 'start', 'fecha inicio');
   const idxFinPlan = col('fin plan', 'finplan', 'fin planif', 'fecha fin plan', 'fecha plan');
   const idxFinEst  = col('fin est', 'finest', 'entrega est', 'fecha entrega', 'estimada');
-  const idxDesvio  = col('desvio', 'desvío', 'dias', 'días', 'delay');
+  const idxDesvio    = col('desvio', 'desvío', 'dias', 'días', 'delay');
+  const idxCotTotal  = col('cotizado total');
+  const idxRealTotal = col('reales total');
+  const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
 
   return rows.slice(1)
     .filter(row => {
@@ -60,7 +73,10 @@ function mapRowsToProjects(rows) {
         inicio:  parseExcelDate(idxInicio !== -1 ? row[idxInicio] : null),
         finPlan: parseExcelDate(idxFinPlan !== -1 ? row[idxFinPlan] : null),
         finEst:  parseExcelDate(idxFinEst !== -1 ? row[idxFinEst] : null),
-        desvio:  idxDesvio !== -1  ? (Number(row[idxDesvio]) || 0) : 0,
+        desvio:      idxDesvio !== -1    ? (Number(row[idxDesvio]) || 0) : 0,
+        hhPlanTotal: idxCotTotal !== -1  ? (Number(row[idxCotTotal]) || 0) : 0,
+        hhRealTotal: idxRealTotal !== -1 ? (Number(row[idxRealTotal]) || 0) : 0,
+        budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
         hhPlan:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
         hhReal:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
         budget:  { total: 0, consumido: 0, materiales: 0, manoObra: 0 },

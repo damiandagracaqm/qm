@@ -13,31 +13,13 @@ function InfoRow({ label, value, style }) {
   );
 }
 
-function BudgetSection({ budget }) {
-  const bPct = budget.total > 0 ? Math.round(budget.consumido / budget.total * 100) : 0;
-  const matPct = budget.consumido > 0 ? Math.round(budget.materiales / budget.consumido * 100) : 0;
-  const moPct = 100 - matPct;
-  const barColor = bPct > 90 ? '#dc2626' : bPct > 70 ? '#d97706' : '#3b82f6';
+function BudgetSection({ pct }) {
+  const color = pct > 100 ? '#dc2626' : pct > 85 ? '#d97706' : '#16a34a';
+  const bg    = pct > 100 ? '#fee2e2' : pct > 85 ? '#fef3c7' : '#dcfce7';
   return (
-    <div>
-      <InfoRow label="Presupuesto total" value={`USD ${budget.total.toLocaleString()}`} />
-      <InfoRow label="Consumido" value={`USD ${budget.consumido.toLocaleString()} (${bPct}%)`} />
-      <div className="ir" style={{ borderBottom: 'none' }}>
-        <span className="il">Disponible</span>
-        <span className="iv" style={{ color: '#16a34a' }}>USD {(budget.total - budget.consumido).toLocaleString()}</span>
-      </div>
-      <div style={{ margin: '12px 0 6px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Ejecución presupuestaria</div>
-      {[
-        { label: 'Total', pct: bPct, color: barColor, val: `${bPct}%` },
-        { label: 'Materiales', pct: matPct, color: '#f59e0b', val: `USD ${budget.materiales.toLocaleString()}` },
-        { label: 'Mano de obra', pct: moPct, color: '#8b5cf6', val: `USD ${budget.manoObra.toLocaleString()}` },
-      ].map(({ label, pct, color, val }) => (
-        <div className="bud-row" key={label}>
-          <span className="bud-label">{label}</span>
-          <div className="bud-track"><div className="bud-fill" style={{ width: `${pct}%`, background: color }}></div></div>
-          <span className="bud-val">{val}</span>
-        </div>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '24px 0' }}>
+      <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '.4px' }}>Presupuesto consumido</div>
+      <div style={{ fontSize: 38, fontWeight: 600, color, background: bg, padding: '10px 28px', borderRadius: 12, lineHeight: 1 }}>{pct}%</div>
     </div>
   );
 }
@@ -90,9 +72,10 @@ export function DetailView({ project, onBack, onSubmitCR }) {
   if (!project) return null;
   const p = project;
   const si = ESTADIOS.indexOf(p.estadio);
-  const totalP = Object.values(p.hhPlan).reduce((a, b) => a + b, 0);
-  const totalR = Object.values(p.hhReal).reduce((a, b) => a + b, 0);
+  const totalP = p.hhPlanTotal ?? Object.values(p.hhPlan).reduce((a, b) => a + b, 0);
+  const totalR = p.hhRealTotal ?? Object.values(p.hhReal).reduce((a, b) => a + b, 0);
   const pctHH = totalP > 0 ? Math.round(totalR / totalP * 100) : 0;
+  const pctBudget = p.budgetPct ?? (p.budget.total > 0 ? Math.round(p.budget.consumido / p.budget.total * 100) : 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -140,7 +123,7 @@ export function DetailView({ project, onBack, onSubmitCR }) {
         </div>
         <div className="card" style={{ padding: 14 }}>
           <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 10 }}>Presupuesto</div>
-          <BudgetSection budget={p.budget} />
+          <BudgetSection pct={pctBudget} />
         </div>
       </div>
 
