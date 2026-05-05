@@ -12,7 +12,13 @@
       "mcp__claude_ai_Microsoft_365__sharepoint_search",
       "mcp__claude_ai_Microsoft_365__read_resource",
       "Bash(python -c ' *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(npx vite *)",
+      "Bash(awk -F, '{for\\(i=1;i<=NF;i++\\) printf \"%d: %s\\\\n\", i, $i}')",
+      "Skill(update-config)",
+      "Bash(ps *)",
+      "Bash(kill 67720 *)"
     ]
   }
 }

@@ -2,12 +2,101 @@ import { useState, useEffect } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
 import { fetchProjects } from './services/graphService';
-import { PROJS, INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
+import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
 import { AprobacionesPage } from './components/pages/AprobacionesPage';
 import { DetailView } from './components/detail/DetailView';
 import { ExcelImport } from './components/common/ExcelImport';
+
+function Skel({ w, h = 12, block = false }) {
+  return (
+    <span style={{
+      display: block ? 'block' : 'inline-block',
+      width: w ?? '100%', height: h, borderRadius: 4,
+      background: 'oklch(0.22 0.005 250)',
+      animation: 'skeleton-pulse 1.4s ease-in-out infinite',
+      flexShrink: 0,
+    }} />
+  );
+}
+
+function KpiSkeleton() {
+  return (
+    <div className="page-body">
+      <div className="toolbar">
+        <Skel w={130} h={28} /> <Skel w={130} h={28} />
+      </div>
+      <div className="kpi-grid">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div className="kpi-cell" key={i}>
+            <Skel w={72} h={10} />
+            <Skel w={52} h={34} />
+            <Skel w={90} h={10} />
+          </div>
+        ))}
+      </div>
+      <div className="grid-2">
+        {[0, 1].map(i => (
+          <div className="card" key={i}>
+            <div className="card-h" style={{ gap: 6, flexDirection: 'column', alignItems: 'flex-start' }}>
+              <Skel w={160} h={12} /> <Skel w={100} h={10} />
+            </div>
+            <div className="card-b" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Array.from({ length: 5 }).map((_, j) => <Skel key={j} h={20} block />)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="grid-2">
+        {[0, 1].map(i => (
+          <div className="card" key={i}>
+            <div className="card-h" style={{ gap: 6, flexDirection: 'column', alignItems: 'flex-start' }}>
+              <Skel w={160} h={12} /> <Skel w={100} h={10} />
+            </div>
+            <div className="card-b" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Array.from({ length: 4 }).map((_, j) => <Skel key={j} h={20} block />)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProyectosSkeleton() {
+  return (
+    <div className="page-body">
+      <div className="toolbar" style={{ gap: 8 }}>
+        <Skel w={220} h={28} />
+        {Array.from({ length: 4 }).map((_, i) => <Skel key={i} w={72} h={28} />)}
+      </div>
+      <div className="client-group">
+        <div className="client-h">
+          <Skel w={140} h={13} />
+          <Skel w={60} h={11} />
+        </div>
+        <div className="proj-grid">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div className="pcard" key={i} style={{ display: 'flex', flexDirection: 'column', gap: 12, pointerEvents: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <Skel w={60} h={13} /> <Skel w={90} h={10} />
+                </div>
+                <Skel w={72} h={22} />
+              </div>
+              <Skel h={6} block />
+              <Skel w={110} h={10} />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Skel w={80} h={10} /> <Skel w={60} h={10} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const NavIcon = {
   dash: () => (
@@ -49,8 +138,8 @@ export default function App() {
   const [currentProj, setCurrentProj] = useState(null);
   const [pendReqs, setPendReqs] = useState(INITIAL_PEND_REQS);
   const [histReqs, setHistReqs] = useState(INITIAL_HIST_REQS);
-  const [projects, setProjects] = useState(PROJS);
-  const [xlsxSource, setXlsxSource] = useState('demo');
+  const [projects, setProjects] = useState([]);
+  const [xlsxSource, setXlsxSource] = useState('none');
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
   const [showImport, setShowImport] = useState(false);
@@ -86,8 +175,8 @@ export default function App() {
     }
   }
 
-  function login() { instance.loginPopup(loginRequest).catch(console.error); }
-  function logout() { instance.logoutPopup(); }
+  function login() { instance.loginRedirect(loginRequest).catch(console.error); }
+  function logout() { instance.logoutRedirect(); }
 
   function openDetail(id) {
     const proj = projects.find(p => p.id === id);
@@ -117,9 +206,10 @@ export default function App() {
   const pageTitle = page === 'detail' ? (currentProj?.id ?? '') : pageLabel.title;
 
   const dataSourceStatus = () => {
-    if (xlsxSource === 'graph') return { dot: 'var(--ok)', label: 'SharePoint sincronizado' };
-    if (xlsxSource === 'excel') return { dot: 'var(--warn)', label: 'Excel importado' };
-    return { dot: 'oklch(0.5 0.01 250)', label: 'Datos demo' };
+    if (xlsxSource === 'graph')  return { dot: 'var(--ok)',              label: 'SharePoint sincronizado' };
+    if (xlsxSource === 'excel')  return { dot: 'var(--warn)',             label: 'Excel importado' };
+    if (loadingXlsx)             return { dot: 'var(--warn)',             label: 'Cargando…' };
+    return                              { dot: 'oklch(0.5 0.01 250)',     label: 'Sin datos' };
   };
   const src = dataSourceStatus();
 
@@ -172,11 +262,11 @@ export default function App() {
             style={{
               marginTop: 6, background: 'none', border: 'none', padding: 0,
               fontFamily: 'var(--font-mono)', fontSize: 10,
-              color: xlsxSource === 'demo' ? 'var(--warn)' : 'oklch(0.55 0.01 250)',
+              color: xlsxSource === 'none' ? 'var(--warn)' : 'oklch(0.55 0.01 250)',
               cursor: 'pointer', textDecoration: 'underline',
             }}
           >
-            {xlsxSource === 'demo' ? 'Importar Excel' : 'Reimportar Excel'}
+            {xlsxSource === 'none' ? 'Importar Excel' : 'Reimportar Excel'}
           </button>
         </div>
 
@@ -213,12 +303,31 @@ export default function App() {
           <div style={{ maxWidth: 480, margin: '60px auto', display: 'flex', flexDirection: 'column', gap: 16, padding: '0 24px' }}>
             <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--ink)' }}>Importar proyectos desde Excel</div>
             <ExcelImport onImport={handleExcelImport} />
-            {xlsxSource !== 'demo' && (
+            {xlsxSource !== 'none' && (
               <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(false)} style={{ alignSelf: 'center' }}>
                 Cancelar
               </button>
             )}
           </div>
+        ) : !isAuthenticated ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, color: 'oklch(0.55 0.01 250)' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.4">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+            </svg>
+            <div style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--ink)' }}>Iniciá sesión para ver los proyectos</div>
+            <div style={{ fontSize: '0.8rem' }}>Conectate con tu cuenta Microsoft de QM Equipment</div>
+            <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={login}>Iniciar sesión</button>
+          </div>
+        ) : loadingXlsx ? (
+          <>
+            <div className="page-header">
+              <div>
+                <div className="page-eyebrow">{pageLabel.eyebrow}</div>
+                <h1 className="page-title">{pageTitle}</h1>
+              </div>
+            </div>
+            {page === 'proyectos' ? <ProyectosSkeleton /> : <KpiSkeleton />}
+          </>
         ) : (
           <>
             <div className="page-header">

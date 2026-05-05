@@ -1,6 +1,8 @@
 import { msalInstance, loginRequest } from '../auth/msalConfig';
 
-const FILE_NAME = 'Proyectos 2.0.xlsx';
+const DRIVE_ID  = 'b!XSvGwsSdhk2DyJEUWTK75LKhSd4DrAJLpytub4lCmm5TwIt2lXlxRZilY-SR1xxS';
+const ITEM_ID   = '015MLLTG7GQGDUPDNEPZDKY6NNUWUMYPV3';
+const SHEET_NAME = 'Estado de proyectos';
 
 async function getToken() {
   const accounts = msalInstance.getAllAccounts();
@@ -21,24 +23,10 @@ async function graphGet(path) {
   return res.json();
 }
 
-async function findFileItem() {
-  // Busca el archivo en todos los drives accesibles (OneDrive + SharePoint)
-  const data = await graphGet(`/me/drive/search(q='${encodeURIComponent(FILE_NAME)}')?$select=id,name,parentReference,webUrl`);
-  const match = data.value?.find(f => f.name === FILE_NAME);
-  if (!match) throw new Error(`No se encontró "${FILE_NAME}" en los archivos accesibles. Verificá que tenés acceso al archivo en SharePoint.`);
-  return match;
-}
-
-async function getWorkbookSheets(driveId, itemId) {
-  const data = await graphGet(`/drives/${driveId}/items/${itemId}/workbook/worksheets`);
-  return data.value;
-}
-
-async function getSheetData(driveId, itemId, sheetName) {
-  const data = await graphGet(
-    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheetName)}')/usedRange`
+async function getSheetData() {
+  return graphGet(
+    `/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/usedRange`
   );
-  return data;
 }
 
 function mapRowsToProjects(rows) {
@@ -97,23 +85,7 @@ function parseExcelDate(value) {
 }
 
 export async function fetchProjects() {
-  const fileItem = await findFileItem();
-  const driveId = fileItem.parentReference.driveId;
-  const itemId  = fileItem.id;
-
-  const sheets = await getWorkbookSheets(driveId, itemId);
-  console.log('Hojas encontradas:', sheets.map(s => s.name));
-
-  const mainSheet = sheets.find(s =>
-    s.name.toLowerCase().includes('proyect') ||
-    s.name.toLowerCase().includes('lista') ||
-    s.name.toLowerCase().includes('resumen')
-  ) ?? sheets[0];
-
-  console.log('Leyendo hoja:', mainSheet.name);
-  const range = await getSheetData(driveId, itemId, mainSheet.name);
+  const range = await getSheetData();
   const projects = mapRowsToProjects(range.values);
-  console.log(`Proyectos cargados: ${projects.length}`);
-
-  return { projects, sheetNames: sheets.map(s => s.name) };
+  return { projects, sheetNames: [SHEET_NAME] };
 }

@@ -1193,3 +1193,9 @@ input, select, textarea { font: inherit; }
   .page-body { padding: 16px 16px 60px; }
   .page-header { padding: 14px 16px 12px; }
 }
+
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
