@@ -1,13 +1,68 @@
-import { useState, useMemo } from 'react';
-import { PROJS } from '../../data/projects';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { StatusTag } from '../common/StatusTag';
 
-const LDP_OPTIONS = [
-  'Facundo Fernández', 'Santiago Lenzi', 'Agustín Bereilh',
-  'Martín Navarro', 'Federico Donatini', 'Lucio Tappi', 'Facundo Quintana',
+const ESTADO_GROUPS = [
+  { label: 'En producción', options: ['Ingeniería', 'Corte y Plegado', 'Metalurgia', 'Metalurgia Tigre', 'Inoxidable', 'Pintura', 'Montaje'] },
+  { label: 'Cierre', options: ['Próximo a terminar', 'Próximo a entregar', 'Entregado', 'Entregado a NQN'] },
+  { label: 'Otros', options: ['Sin empezar', 'Stand by', 'Cancelado'] },
 ];
 
-function ClientGroup({ cliente, projs, index, onOpenDetail }) {
+function MultiSelect({ label, options, optgroups, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  function toggle(val) {
+    onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
+  }
+
+  const allOptions = optgroups ? optgroups.flatMap(g => g.options) : (options ?? []);
+  const displayLabel = selected.length === 0 ? label
+    : selected.length === 1 ? selected[0]
+    : `${selected.length} seleccionados`;
+
+  return (
+    <div ref={ref} className="ms-wrap">
+      <button className="sf ms-btn" onClick={() => setOpen(o => !o)} type="button">
+        <span className="ms-label">{displayLabel}</span>
+        <span className="ms-arrow">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="ms-dropdown">
+          {selected.length > 0 && (
+            <button className="ms-clear" onClick={() => onChange([])}>Limpiar selección</button>
+          )}
+          {optgroups ? optgroups.map(g => (
+            <div key={g.label}>
+              <div className="ms-group-label">{g.label}</div>
+              {g.options.map(opt => (
+                <label key={opt} className="ms-option">
+                  <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                  {opt}
+                </label>
+              ))}
+            </div>
+          )) : allOptions.map(opt => (
+            <label key={opt} className="ms-option">
+              <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientGroup({ cliente, projs, onOpenDetail }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="client-group" style={{ marginBottom: 10 }}>
@@ -35,22 +90,24 @@ function ClientGroup({ cliente, projs, index, onOpenDetail }) {
   );
 }
 
-export function ProyectosPage({ onOpenDetail }) {
+export function ProyectosPage({ projects, onOpenDetail }) {
   const [search, setSearch] = useState('');
-  const [fst, setFst] = useState('');
-  const [fldp, setFldp] = useState('');
+  const [fst, setFst] = useState([]);
+  const [fldp, setFldp] = useState([]);
+
+  const ldpOptions = useMemo(() => [...new Set(projects.map(p => p.ldp).filter(Boolean))].sort(), [projects]);
 
   const byClient = useMemo(() => {
     const s = search.toLowerCase();
-    const filtered = PROJS.filter(p =>
+    const filtered = projects.filter(p =>
       (!s || (p.id + p.desc + p.cliente).toLowerCase().includes(s)) &&
-      (!fst || p.estado === fst) &&
-      (!fldp || p.ldp === fldp)
+      (fst.length === 0 || fst.includes(p.estado)) &&
+      (fldp.length === 0 || fldp.includes(p.ldp))
     );
     const map = {};
     filtered.forEach(p => { if (!map[p.cliente]) map[p.cliente] = []; map[p.cliente].push(p); });
     return map;
-  }, [search, fst, fldp]);
+  }, [projects, search, fst, fldp]);
 
   const entries = Object.entries(byClient);
 
@@ -61,19 +118,23 @@ export function ProyectosPage({ onOpenDetail }) {
           className="si" type="text" placeholder="Buscar serie, descripción..."
           value={search} onChange={e => setSearch(e.target.value)}
         />
-        <select className="sf" value={fst} onChange={e => setFst(e.target.value)}>
-          <option value="">Todos los estados</option>
-          <option>En proceso</option><option>Stand by</option><option>Entregado</option><option>Cancelado</option>
-        </select>
-        <select className="sf" value={fldp} onChange={e => setFldp(e.target.value)}>
-          <option value="">Todos los LDP</option>
-          {LDP_OPTIONS.map(l => <option key={l}>{l}</option>)}
-        </select>
+        <MultiSelect
+          label="Todos los estados"
+          optgroups={ESTADO_GROUPS}
+          selected={fst}
+          onChange={setFst}
+        />
+        <MultiSelect
+          label="Todos los LDP"
+          options={ldpOptions}
+          selected={fldp}
+          onChange={setFldp}
+        />
       </div>
       {entries.length === 0
         ? <div className="empty">Sin resultados</div>
-        : entries.map(([cli, projs], i) => (
-            <ClientGroup key={cli} cliente={cli} projs={projs} index={i} onOpenDetail={onOpenDetail} />
+        : entries.map(([cli, projs]) => (
+            <ClientGroup key={cli} cliente={cli} projs={projs} onOpenDetail={onOpenDetail} />
           ))
       }
     </div>
