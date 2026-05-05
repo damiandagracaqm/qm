@@ -13,7 +13,6 @@ function parsePercent(value) {
 
 function parseExcelDate(value) {
   if (value === null || value === undefined || value === '') return '—';
-  // Excel serial 0 or 1 = "00/01/1900" / "01/01/1900" = sin fecha real
   if (typeof value === 'number' && value <= 1) return '—';
   if (typeof value === 'number' && value > 1000) {
     const date = new Date((value - 25569) * 86400 * 1000);
@@ -55,7 +54,6 @@ function mapRowsToProjects(rows) {
 
   return rows.slice(1)
     .filter(row => {
-      // Descarta filas donde todos los valores son null, vacío o cero (filas de Excel sin datos reales)
       const meaningful = row.filter(cell => cell !== null && cell !== undefined && cell !== '' && cell !== 0 && cell !== '0');
       return meaningful.length > 0;
     })
@@ -135,22 +133,23 @@ export function ExcelImport({ onImport }) {
       onDragOver={e => e.preventDefault()}
       onClick={() => inputRef.current?.click()}
       style={{
-        border: '2px dashed var(--color-border)',
+        border: '2px dashed var(--line-2)',
         borderRadius: 10,
         padding: '32px 24px',
         textAlign: 'center',
         cursor: 'pointer',
-        color: 'var(--color-text-secondary)',
+        color: 'var(--ink-3)',
         fontSize: '0.875rem',
         transition: 'border-color .2s',
+        background: 'var(--surface)',
       }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = '#3b82f6'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
     >
       <div style={{ fontSize: '2rem', marginBottom: 8 }}>📂</div>
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Arrastrá el Excel aquí</div>
+      <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>Arrastrá el Excel aquí</div>
       <div>o hacé click para seleccionar el archivo</div>
-      <div style={{ marginTop: 8, fontSize: '0.75rem', opacity: 0.6 }}>Proyectos 2.0.xlsx</div>
+      <div style={{ marginTop: 8, fontSize: '0.75rem', opacity: 0.6, fontFamily: 'var(--font-mono)' }}>Proyectos 2.0.xlsx</div>
       <input
         ref={inputRef}
         type="file"

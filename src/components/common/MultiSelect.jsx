@@ -42,7 +42,7 @@ export function MultiSelect({ label, options, optgroups, selected, onChange }) {
 
   return (
     <div ref={ref} className="ms-wrap">
-      <button className="sf ms-btn" onClick={() => setOpen(o => !o)} type="button">
+      <button className={`ms-btn${selected.length > 0 ? ' has-selection' : ''}`} onClick={() => setOpen(o => !o)} type="button">
         <span className="ms-label">{displayLabel}</span>
         <span className="ms-arrow">{open ? '▲' : '▼'}</span>
       </button>
