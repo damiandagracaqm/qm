@@ -4,6 +4,14 @@ import { StatusTag, DesvioTag } from '../common/StatusTag';
 import { AreaBars } from '../common/AreaBars';
 import { GanttChart } from './GanttChart';
 
+function PencilIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+    </svg>
+  );
+}
+
 function BackIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -20,8 +28,7 @@ function DownloadIcon() {
   );
 }
 
-function BudgetGauge({ budget }) {
-  const pct = budget.total > 0 ? Math.round(budget.consumido / budget.total * 100) : 0;
+function BudgetGauge({ budget, pct }) {
   const color = pct > 100 ? 'var(--bad)' : pct > 85 ? 'var(--warn)' : 'var(--ok)';
   const C = Math.PI * 70;
   const dash = (Math.min(pct, 100) / 100) * C;
@@ -40,13 +47,17 @@ function BudgetGauge({ budget }) {
       <div style={{ textAlign: 'center', marginTop: -32 }}>
         <div className="gauge-val" style={{ color }}>{pct}%</div>
         <div className="gauge-cap">
-          USD {(budget.consumido / 1000).toFixed(0)}k de {(budget.total / 1000).toFixed(0)}k
+          {budget.total > 0
+            ? `USD ${(budget.consumido / 1000).toFixed(0)}k de ${(budget.total / 1000).toFixed(0)}k`
+            : 'del presupuesto consumido'}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--ink-3)' }}>
-        <span>Materiales <b style={{ color: 'var(--ink)' }}>USD {(budget.materiales / 1000).toFixed(0)}k</b></span>
-        <span>Mano obra <b style={{ color: 'var(--ink)' }}>USD {(budget.manoObra / 1000).toFixed(0)}k</b></span>
-      </div>
+      {budget.total > 0 && (
+        <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--ink-3)' }}>
+          <span>Materiales <b style={{ color: 'var(--ink)' }}>USD {(budget.materiales / 1000).toFixed(0)}k</b></span>
+          <span>Mano obra <b style={{ color: 'var(--ink)' }}>USD {(budget.manoObra / 1000).toFixed(0)}k</b></span>
+        </div>
+      )}
     </div>
   );
 }
@@ -107,9 +118,29 @@ function ChangeRequestForm({ proyId, onSubmit }) {
   );
 }
 
-export function DetailView({ project, onBack, onSubmitCR }) {
+export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSaveBudgetPct }) {
   if (!project) return null;
   const p = project;
+
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [pctDraft, setPctDraft] = useState('');
+
+  const displayPct = editingBudget && pctDraft !== ''
+    ? Math.max(0, Math.min(999, Number(pctDraft) || 0))
+    : (p.budgetPct ?? 0);
+
+  function startEditBudget() {
+    setPctDraft(String(p.budgetPct ?? 0));
+    setEditingBudget(true);
+  }
+
+  function saveBudget() {
+    const pct = Math.max(0, Math.min(999, Number(pctDraft) || 0));
+    onUpdateProject?.({ ...p, budgetPct: pct });
+    onSaveBudgetPct?.(p, pct);
+    setEditingBudget(false);
+  }
+
   const si = ESTADIOS.indexOf(p.estadio);
   const totalP = p.hhPlanTotal ?? Object.values(p.hhPlan || {}).reduce((a, b) => a + b, 0);
   const totalR = p.hhRealTotal ?? Object.values(p.hhReal || {}).reduce((a, b) => a + b, 0);
@@ -184,9 +215,51 @@ export function DetailView({ project, onBack, onSubmitCR }) {
           </div>
         </div>
         <div className="card">
-          <div className="card-h"><span className="card-t">Presupuesto</span><span className="card-sub">USD</span></div>
+          <div className="card-h">
+            <span className="card-t">Presupuesto</span>
+            <span className="card-sub">USD</span>
+            <button
+              onClick={startEditBudget}
+              title="Editar % consumido"
+              style={{
+                marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--ink-3)', padding: '2px 6px', borderRadius: 4, lineHeight: 1,
+              }}
+            >
+              <PencilIcon />
+            </button>
+          </div>
           <div className="card-b">
-            <BudgetGauge budget={p.budget} />
+            <BudgetGauge budget={p.budget} pct={displayPct} />
+            {editingBudget && (
+              <div style={{
+                marginTop: 16, padding: '12px 16px',
+                background: 'oklch(0.15 0.005 250)', borderRadius: 8,
+                display: 'flex', flexDirection: 'column', gap: 10,
+              }}>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+                  % consumido del presupuesto
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max="999"
+                    value={pctDraft}
+                    onChange={e => setPctDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveBudget(); if (e.key === 'Escape') setEditingBudget(false); }}
+                    style={{ width: 80, fontFamily: 'var(--font-mono)', fontSize: 14 }}
+                    autoFocus
+                  />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--ink-2)' }}>%</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-accent btn-sm" onClick={saveBudget}>Guardar</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditingBudget(false)}>Cancelar</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

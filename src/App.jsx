@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
-import { fetchProjects } from './services/graphService';
+import { fetchProjects, updateBudgetPct } from './services/graphService';
 import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
 import { AprobacionesPage } from './components/pages/AprobacionesPage';
 import { DetailView } from './components/detail/DetailView';
-import { ExcelImport } from './components/common/ExcelImport';
+import { ExcelImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
 
 function Skel({ w, h = 12, block = false }) {
   return (
@@ -143,6 +143,9 @@ export default function App() {
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const workbookRef = useRef(null);
+  const [xlsxMeta, setXlsxMeta] = useState(null);   // { sheetName, budgetColIdx }
+  const [hasPendingDownload, setHasPendingDownload] = useState(false);
 
   const userName = accounts[0]?.name ?? accounts[0]?.username ?? null;
   const userInitials = userName ? userName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'U';
@@ -153,9 +156,13 @@ export default function App() {
     setLoadingXlsx(true);
     setXlsxError(null);
     fetchProjects()
-      .then(({ projects: fetched, sheetNames }) => {
+      .then(({ projects: fetched, sheetNames, budgetColIdx }) => {
         console.log('Hojas encontradas:', sheetNames);
-        if (fetched.length > 0) { setProjects(fetched); setXlsxSource('graph'); }
+        if (fetched.length > 0) {
+          setProjects(fetched);
+          setXlsxSource('graph');
+          setXlsxMeta({ sheetName: sheetNames[0], budgetColIdx: budgetColIdx ?? -1 });
+        }
       })
       .catch(err => {
         console.error('Error cargando planilla:', err);
@@ -164,11 +171,16 @@ export default function App() {
       .finally(() => setLoadingXlsx(false));
   }, [isAuthenticated]);
 
-  function handleExcelImport(imported, sheetNames) {
+  function handleExcelImport(imported, sheetNames, meta) {
     if (imported.length > 0) {
       setProjects(imported);
       setXlsxSource('excel');
       setShowImport(false);
+      setHasPendingDownload(false);
+      if (meta) {
+        workbookRef.current = meta.workbook;
+        setXlsxMeta({ sheetName: meta.sheetName, budgetColIdx: meta.budgetColIdx });
+      }
       console.log('Hojas disponibles:', sheetNames);
     } else {
       alert('No se encontraron proyectos en la planilla. Revisá que la primera fila tenga encabezados.');
@@ -186,6 +198,30 @@ export default function App() {
   function closeDetail() {
     setCurrentProj(null);
     setPage('proyectos');
+  }
+
+  function handleUpdateProject(updated) {
+    setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setCurrentProj(updated);
+  }
+
+  function handleSaveBudgetPct(proj, pct) {
+    // Actualiza la celda AQ en el workbook local y ofrece descarga
+    if (xlsxSource === 'excel' && workbookRef.current && xlsxMeta?.budgetColIdx >= 0 && proj._rowIdx != null) {
+      updateWorkbookBudgetPct(workbookRef.current, xlsxMeta.sheetName, proj._rowIdx, xlsxMeta.budgetColIdx, pct);
+      setHasPendingDownload(true);
+    }
+    // Graph API: PATCH directo a la celda (requiere admin consent activo)
+    if (xlsxSource === 'graph' && proj._rowIdx != null && xlsxMeta?.budgetColIdx >= 0) {
+      updateBudgetPct(proj._rowIdx, xlsxMeta.budgetColIdx, pct).catch(console.error);
+    }
+  }
+
+  function doDownloadExcel() {
+    if (workbookRef.current) {
+      downloadWorkbook(workbookRef.current);
+      setHasPendingDownload(false);
+    }
   }
 
   function resolve(id, decision) {
@@ -263,11 +299,23 @@ export default function App() {
               marginTop: 6, background: 'none', border: 'none', padding: 0,
               fontFamily: 'var(--font-mono)', fontSize: 10,
               color: xlsxSource === 'none' ? 'var(--warn)' : 'oklch(0.55 0.01 250)',
-              cursor: 'pointer', textDecoration: 'underline',
+              cursor: 'pointer', textDecoration: 'underline', display: 'block',
             }}
           >
             {xlsxSource === 'none' ? 'Importar Excel' : 'Reimportar Excel'}
           </button>
+          {hasPendingDownload && (
+            <button
+              onClick={doDownloadExcel}
+              style={{
+                marginTop: 6, background: 'none', border: 'none', padding: 0,
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                color: 'var(--ok)', cursor: 'pointer', textDecoration: 'underline', display: 'block',
+              }}
+            >
+              Descargar planilla actualizada
+            </button>
+          )}
         </div>
 
         <div className="sidebar-foot">
@@ -349,7 +397,7 @@ export default function App() {
             {page === 'kpi' && <KpiPage projects={projects} onOpenDetail={openDetail} />}
             {page === 'proyectos' && <ProyectosPage projects={projects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
-            {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} />}
+            {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} />}
           </>
         )}
       </main>

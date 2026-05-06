@@ -20,11 +20,14 @@ function parseExcelDate(value) {
   }
   const str = String(value).trim();
   if (!str || str === '0' || str === '00/01/1900' || str === '01/01/1900') return '—';
+  // Convierte DD/MM/YYYY o D/M/YYYY a ISO YYYY-MM-DD
+  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return str;
 }
 
 function mapRowsToProjects(rows) {
-  if (!rows || rows.length < 2) return [];
+  if (!rows || rows.length < 2) return { projects: [], budgetColIdx: -1 };
   const headers = rows[0].map(h => String(h ?? '').toLowerCase().trim());
 
   console.log('Columnas encontradas:', rows[0]);
@@ -51,13 +54,12 @@ function mapRowsToProjects(rows) {
   const idxCotTotal  = col('cotizado total');
   const idxRealTotal = col('reales total');
   const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
+  const idxFinReal   = col('entrega final');
 
-  return rows.slice(1)
-    .filter(row => {
-      const meaningful = row.filter(cell => cell !== null && cell !== undefined && cell !== '' && cell !== 0 && cell !== '0');
-      return meaningful.length > 0;
-    })
+  const projects = rows.slice(1)
     .map((row, i) => {
+      const meaningful = row.filter(cell => cell !== null && cell !== undefined && cell !== '' && cell !== 0 && cell !== '0');
+      if (meaningful.length === 0) return null;
       const id = idxId !== -1 ? String(row[idxId] ?? '').trim() : `PROJ-${i + 1}`;
       if (!id || id === '0') return null;
       return {
@@ -75,6 +77,8 @@ function mapRowsToProjects(rows) {
         hhPlanTotal: idxCotTotal !== -1  ? (Number(row[idxCotTotal]) || 0) : 0,
         hhRealTotal: idxRealTotal !== -1 ? (Number(row[idxRealTotal]) || 0) : 0,
         budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
+        finReal:     parseExcelDate(idxFinReal !== -1 ? row[idxFinReal] : null),
+        _rowIdx: i + 1,  // posición 0-based en rows[] (0 = header), usada para write-back
         hhPlan:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
         hhReal:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
         budget:  { total: 0, consumido: 0, materiales: 0, manoObra: 0 },
@@ -83,6 +87,28 @@ function mapRowsToProjects(rows) {
       };
     })
     .filter(Boolean);
+
+  return { projects, budgetColIdx: idxBudgetPct };
+}
+
+export function updateWorkbookBudgetPct(workbook, sheetName, rowIdx, colIdx, pct) {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return;
+  const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+  sheet[cellAddr] = { v: pct / 100, t: 'n', z: '0%' };
+}
+
+export function downloadWorkbook(workbook, filename = 'Proyectos_actualizado.xlsx') {
+  const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export function ExcelImport({ onImport }) {
@@ -106,9 +132,9 @@ export function ExcelImport({ onImport }) {
         const sheet = workbook.Sheets[mainSheetName];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
-        const projects = mapRowsToProjects(rows);
+        const { projects, budgetColIdx } = mapRowsToProjects(rows);
         console.log(`Proyectos parseados: ${projects.length}`, projects);
-        onImport(projects, workbook.SheetNames);
+        onImport(projects, workbook.SheetNames, { workbook, sheetName: mainSheetName, budgetColIdx });
       } catch (err) {
         console.error('Error leyendo Excel:', err);
         alert('Error leyendo el archivo: ' + err.message);
