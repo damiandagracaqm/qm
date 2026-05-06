@@ -75,7 +75,7 @@ function mapRowsToProjects(rows) {
   };
 
   const idxId        = col('numero', 'n°', 'nro', 'id', 'serie');
-  const idxDesc      = col('descripcion', 'descripción', 'desc', 'equipo', 'nombre');
+  const idxDesc      = col('proyecto', 'descripcion', 'descripción', 'desc', 'equipo', 'nombre');
   const idxCliente   = col('cliente');
   const idxLdp       = col('ldp', 'lider', 'líder', 'responsable');
   const idxEstado    = col('estado');
@@ -87,6 +87,8 @@ function mapRowsToProjects(rows) {
   const idxDesvio    = col('desvio', 'desvío', 'dias', 'días');
   const idxCotTotal  = col('cotizado total');
   const idxRealTotal = col('reales total');
+  const idxKpi1      = col('kpi 1');
+  const idxKpi2      = col('kpi 2');
   const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
   const idxFinReal   = col('entrega final');
 
@@ -108,6 +110,8 @@ function mapRowsToProjects(rows) {
         desvio:      idxDesvio !== -1    ? (Number(row[idxDesvio]) || 0) : 0,
         hhPlanTotal: idxCotTotal !== -1  ? (Number(row[idxCotTotal])  || 0) : 0,
         hhRealTotal: idxRealTotal !== -1 ? (Number(row[idxRealTotal]) || 0) : 0,
+        kpi1Pct:     idxKpi1 !== -1      ? parsePercent(row[idxKpi1])     : null,
+        kpi2Pct:     idxKpi2 !== -1      ? parsePercent(row[idxKpi2])     : null,
         budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
         _rowIdx:     i + 1,
         hhPlan:      { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },

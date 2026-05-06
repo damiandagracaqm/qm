@@ -1199,3 +1199,51 @@ input, select, textarea { font: inherit; }
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
 }
+
+/* ── print / PDF ────────────────────────────────────────── */
+.print-header { display: none; }
+
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Layout: ocultar sidebar, main ocupa todo */
+  .shell { display: block !important; height: auto !important; overflow: visible !important; }
+  .sidebar { display: none !important; }
+  .main { overflow: visible !important; height: auto !important; }
+  .page-body { padding: 0 !important; }
+
+  /* Encabezado de impresión */
+  .print-header { display: block !important; margin-bottom: 20px; }
+
+  /* Ocultar elementos interactivos */
+  .page-header { display: none !important; }
+  .btn, .filter-btn, .view-toggle { display: none !important; }
+  .dot-live { display: none !important; }
+
+  /* Ocultar el selector de mes (el valor ya se ve en el título) */
+  .select-field { display: none !important; }
+
+  /* Cards sin sombra y con bordes */
+  .card {
+    break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid oklch(0.8 0 0) !important;
+    margin-bottom: 14px;
+  }
+
+  /* KPI grid compacto */
+  .kpi-grid { break-inside: avoid; gap: 8px !important; margin-bottom: 14px !important; }
+  .kpi-cell { box-shadow: none !important; border: 1px solid oklch(0.8 0 0) !important; }
+
+  /* Tablas */
+  .rep-table th, .rep-table td { padding: 6px 10px !important; font-size: 10px !important; }
+
+  /* Barras de progreso y área */
+  .pcard-pct-bar, .a-track { background: oklch(0.9 0 0) !important; }
+
+  /* Evitar cortes en bloques importantes */
+  .grid-2, .kpi-grid { break-inside: avoid; }
+
+  /* Ocultar cosas que no aportan al reporte */
+  .kpi-spark { display: none; }
+}

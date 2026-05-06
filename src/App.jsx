@@ -387,7 +387,7 @@ export default function App() {
                 <span className="dot-live" />
                 <span>Actualizado {new Date().toLocaleDateString('es-AR')}</span>
                 {page !== 'detail' && (
-                  <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => alert('PDF en producción.')}>
+                  <button className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => window.print()}>
                     <NavIcon.download /> Reporte PDF
                   </button>
                 )}
