@@ -6,6 +6,7 @@ import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
 import { AprobacionesPage } from './components/pages/AprobacionesPage';
+import { NuevoProyectoPage } from './components/pages/NuevoProyectoPage';
 import { DetailView } from './components/detail/DetailView';
 import { ExcelImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
 
@@ -121,12 +122,18 @@ const NavIcon = {
       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
     </svg>
   ),
+  plus: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  ),
 };
 
 const PAGE_LABELS = {
   kpi:         { eyebrow: 'PANEL · GESTIÓN', title: 'Resumen operativo' },
   proyectos:   { eyebrow: 'CARTERA', title: 'Proyectos en planta' },
   aprobaciones:{ eyebrow: 'WORKFLOW', title: 'Aprobaciones · Change Requests' },
+  nuevo:       { eyebrow: 'GESTIÓN', title: 'Nuevo proyecto' },
   detail:      { eyebrow: 'PROYECTO', title: '' },
 };
 
@@ -143,6 +150,7 @@ export default function App() {
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const workbookRef = useRef(null);
   const [xlsxMeta, setXlsxMeta] = useState(null);   // { sheetName, budgetColIdx }
   const [hasPendingDownload, setHasPendingDownload] = useState(false);
@@ -169,7 +177,7 @@ export default function App() {
         setXlsxError(err.message);
       })
       .finally(() => setLoadingXlsx(false));
-  }, [isAuthenticated]);
+  }, [isAuthenticated, refreshKey]);
 
   function handleExcelImport(imported, sheetNames, meta) {
     if (imported.length > 0) {
@@ -197,6 +205,11 @@ export default function App() {
 
   function closeDetail() {
     setCurrentProj(null);
+    setPage('proyectos');
+  }
+
+  function handleProjectCreated() {
+    setRefreshKey(k => k + 1); // re-fetch desde SharePoint
     setPage('proyectos');
   }
 
@@ -280,6 +293,12 @@ export default function App() {
         >
           <NavIcon.inbox /> Aprobaciones
           {pendCount > 0 && <span className="nav-badge">{pendCount}</span>}
+        </button>
+        <button
+          className={`nav-item ${page === 'nuevo' ? 'active' : ''}`}
+          onClick={() => setPage('nuevo')}
+        >
+          <NavIcon.plus /> Nuevo proyecto
         </button>
 
         <div className="nav-section">Fuentes</div>
@@ -397,6 +416,7 @@ export default function App() {
             {page === 'kpi' && <KpiPage projects={projects} onOpenDetail={openDetail} />}
             {page === 'proyectos' && <ProyectosPage projects={projects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
+            {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}
             {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} />}
           </>
         )}

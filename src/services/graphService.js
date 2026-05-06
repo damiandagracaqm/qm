@@ -1,8 +1,21 @@
 import { msalInstance, loginRequest } from '../auth/msalConfig';
 
-const DRIVE_ID  = 'b!XSvGwsSdhk2DyJEUWTK75LKhSd4DrAJLpytub4lCmm5TwIt2lXlxRZilY-SR1xxS';
-const ITEM_ID   = '015MLLTG7GQGDUPDNEPZDKY6NNUWUMYPV3';
+const SHAREPOINT_URL = 'https://qmequipment123.sharepoint.com/:x:/r/sites/Produccin/Documentos%20compartidos/Proyectos/Proyectos%202.0.xlsx?d=wfe883325926f4ea98fc660906c6137c3&csf=1&web=1&e=wbxezq';
 const SHEET_NAME = 'Estado de proyectos';
+
+function encodeSharingUrl(url) {
+  return 'u!' + btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// Resuelve la URL de SharePoint a driveId + itemId (se cachea por sesión)
+let _driveItem = null;
+async function resolveDriveItem() {
+  if (_driveItem) return _driveItem;
+  const shareId = encodeSharingUrl(SHAREPOINT_URL);
+  const item = await graphGet(`/shares/${shareId}/driveItem`);
+  _driveItem = { driveId: item.parentReference.driveId, itemId: item.id };
+  return _driveItem;
+}
 
 async function getToken() {
   const accounts = msalInstance.getAllAccounts();
@@ -57,8 +70,9 @@ function parsePercent(value) {
 }
 
 async function getSheetData() {
+  const { driveId, itemId } = await resolveDriveItem();
   return graphGet(
-    `/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/usedRange`
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/usedRange`
   );
 }
 
@@ -147,11 +161,35 @@ export async function fetchProjects() {
   return { projects, sheetNames: [SHEET_NAME], budgetColIdx };
 }
 
+export async function addProject({ id, desc, ldp, finEst }) {
+  const { driveId, itemId } = await resolveDriveItem();
+
+  // Obtiene la cantidad de filas usadas para saber dónde agregar
+  const range = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/usedRange`
+  );
+
+  const newRow = range.rowCount + 1; // fila nueva (1-based, row 1 = encabezados)
+
+  // Convierte fecha YYYY-MM-DD → DD/MM/YYYY para el Excel
+  const finEstExcel = finEst
+    ? finEst.split('-').reverse().join('/')
+    : '';
+
+  // Columnas A–I: N°serie, Proyecto, Cliente, LDP, FinEstimada, EntregaEst, Reprog, Causas, Estado
+  const values = [[id, desc, '', ldp, '', finEstExcel, '', '', 'Sin empezar']];
+
+  await graphPatch(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/range(address='A${newRow}:I${newRow}')`,
+    { values }
+  );
+}
+
 export async function updateBudgetPct(rowIdx, colIdx, pct) {
-  // rowIdx: 0-based en rows[] (1 = primera fila de datos); colIdx: 0-based
+  const { driveId, itemId } = await resolveDriveItem();
   const cellAddr = `${colToLetter(colIdx)}${rowIdx + 1}`;
   await graphPatch(
-    `/drives/${DRIVE_ID}/items/${ITEM_ID}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/range(address='${cellAddr}')`,
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/range(address='${cellAddr}')`,
     { values: [[pct / 100]] }
   );
 }
