@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AREAS, ESTADIOS } from '../../data/areas';
+import { AREAS, ESTADIOS, ESTADO_A_PASO } from '../../data/areas';
 import { StatusTag, DesvioTag } from '../common/StatusTag';
 import { AreaBars } from '../common/AreaBars';
 import { GanttChart } from './GanttChart';
@@ -141,7 +141,8 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
     setEditingBudget(false);
   }
 
-  const si = ESTADIOS.indexOf(p.estadio);
+  const si = ESTADO_A_PASO[p.estado] ?? -1;
+  const isFinished = si >= 8;
   const totalP = p.hhPlanTotal ?? Object.values(p.hhPlan || {}).reduce((a, b) => a + b, 0);
   const totalR = p.hhRealTotal ?? Object.values(p.hhReal || {}).reduce((a, b) => a + b, 0);
   const pctHH = totalP > 0 ? Math.min(999, Math.round(totalR / totalP * 100)) : 0;
@@ -192,7 +193,7 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
         </div>
         <div className="flow">
           {ESTADIOS.map((e, i) => (
-            <span key={e} className={`flow-step ${i < si ? 'done' : i === si ? 'active' : ''}`}>{e}</span>
+            <span key={e} className={`flow-step ${isFinished || i < si ? 'done' : i === si ? 'active' : ''}`}>{e}</span>
           ))}
         </div>
       </div>
@@ -201,7 +202,7 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
         <div className="card">
           <div className="card-h"><span className="card-t">Datos generales</span></div>
           <div className="card-b" style={{ paddingTop: 8, paddingBottom: 8 }}>
-            <div className="info-row"><span className="l">Estadío actual</span><span className="v">{p.estadio}</span></div>
+            <div className="info-row"><span className="l">Estadío actual</span><span className="v">{p.estado}</span></div>
             <div className="info-row"><span className="l">Próximo estadío</span><span className="v">{p.prox}</span></div>
             <div className="info-row"><span className="l">HH plan / real</span><span className="v mono">{totalP.toLocaleString()} / {totalR.toLocaleString()}</span></div>
             <div className="info-row"><span className="l">% Avance HH</span><span className="v mono">{pctHH}%</span></div>

@@ -19,3 +19,20 @@ export const ESTADIOS = [
   'Montaje eléctrico',
   'Testeo',
 ];
+
+// Mapea el estado del Excel al índice del pipeline (0-7, 8 = completado)
+export const ESTADO_A_PASO = {
+  'Ingeniería':             0,
+  'Corte y Plegado':        1,
+  'Metalurgia':             2,
+  'Metalurgia Tigre':       2,
+  'Inoxidable':             3,
+  'Pintura':                4,
+  'Montaje':                5,
+  'Testeo':                 7,
+  'Próximo a terminar':     8,
+  'Próximo a entregar':     8,
+  'Entregado':              8,
+  'Entregado parcialmente': 8,
+  'Entregado a NQN':        8,
+};

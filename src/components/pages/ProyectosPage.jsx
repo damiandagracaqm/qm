@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ESTADIOS } from '../../data/areas';
+import { ESTADIOS, ESTADO_A_PASO } from '../../data/areas';
 import { StatusTag } from '../common/StatusTag';
 
 function projProgress(p) {
@@ -47,16 +47,16 @@ function ListIcon() {
   );
 }
 
-function Pipeline({ estadio, estado }) {
-  const idx = ESTADIOS.indexOf(estadio);
-  const isFinished = estado === 'Entregado' || estado === 'Entregado a NQN';
+function Pipeline({ estadio }) {
+  const paso = ESTADO_A_PASO[estadio] ?? -1;
+  const isFinished = paso >= 8;
   return (
     <div className="pipeline">
       {ESTADIOS.map((e, i) => {
         let cls = '';
-        if (isFinished) cls = 'done';
-        else if (i < idx) cls = 'done';
-        else if (i === idx) cls = 'active';
+        if (isFinished)   cls = 'done';
+        else if (i < paso) cls = 'done';
+        else if (i === paso) cls = 'active';
         return <div key={e} className={`pipe-step ${cls}`} title={e} />;
       })}
     </div>
@@ -87,10 +87,10 @@ function ProjectCard({ p, onClick }) {
         <StatusTag estado={p.estado} />
       </div>
 
-      <Pipeline estadio={p.estadio} estado={p.estado} />
+      <Pipeline estadio={p.estado} />
 
       <div className="pcard-stage">
-        <span>{p.estadio}</span>
+        <span>{p.estado}</span>
         {p.prox && p.prox !== '—' && <span className="next">→ {p.prox}</span>}
       </div>
 
@@ -111,7 +111,8 @@ function ProjectCard({ p, onClick }) {
   );
 }
 
-const FILTERS = ['Todos', 'En proceso', 'Atrasados', 'Críticos', 'Entregados', 'Stand by'];
+const FILTERS = ['Todos', 'En proceso', 'Críticos', 'Entregados', 'Stand by'];
+const ESTADOS_EXCLUIDOS = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
 const GROUP_OPTIONS = [['cliente', 'Cliente'], ['ldp', 'LDP'], ['none', 'Ninguno']];
 
 export function ProyectosPage({ projects, onOpenDetail }) {
@@ -126,8 +127,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
       const m = !q || p.id.toLowerCase().includes(q) || (p.desc || '').toLowerCase().includes(q) ||
         (p.cliente || '').toLowerCase().includes(q) || (p.ldp || '').toLowerCase().includes(q);
       const e = filterEstado === 'Todos'
-        || (filterEstado === 'En proceso' && p.estado === 'En proceso')
-        || (filterEstado === 'Atrasados' && p.desvio > 0)
+        || (filterEstado === 'En proceso' && !ESTADOS_EXCLUIDOS.has(p.estado))
         || (filterEstado === 'Críticos' && p.desvio > 30)
         || (filterEstado === 'Entregados' && (p.estado === 'Entregado' || p.estado === 'Entregado a NQN'))
         || (filterEstado === 'Stand by' && p.estado === 'Stand by');
@@ -242,7 +242,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
                       <span className={`p-desv ${desvioKind(p.desvio)}`}>
                         {p.desvio === 0 ? '—' : `+${p.desvio}d`}
                       </span>
-                      <span><span className="chip mono">{p.estadio}</span></span>
+                      <span><span className="chip mono">{p.estado}</span></span>
                       <span className="chev"><ChevIcon /></span>
                     </div>
                   );

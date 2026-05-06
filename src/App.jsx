@@ -312,6 +312,21 @@ export default function App() {
               Proyectos 2.0.xlsx
             </div>
           )}
+          {xlsxSource === 'graph' && (
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              disabled={loadingXlsx}
+              style={{
+                marginTop: 6, background: 'none', border: 'none', padding: 0,
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                color: loadingXlsx ? 'oklch(0.45 0.01 250)' : 'var(--accent)',
+                cursor: loadingXlsx ? 'default' : 'pointer',
+                textDecoration: 'underline', display: 'block',
+              }}
+            >
+              {loadingXlsx ? 'Sincronizando…' : '↺ Sincronizar datos'}
+            </button>
+          )}
           <button
             onClick={() => setShowImport(true)}
             style={{

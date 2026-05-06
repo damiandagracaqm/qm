@@ -55,6 +55,22 @@ function mapRowsToProjects(rows) {
   const idxRealTotal = col('reales total');
   const idxKpi1      = col('kpi 1');
   const idxKpi2      = col('kpi 2');
+
+  // HH por área — cotizado
+  const idxPlanIng   = col('cotizado ing');
+  const idxPlanMet   = col('cotizado met');
+  const idxPlanInox  = col('cotizado inox');
+  const idxPlanGyp   = col('cotizado gyp');
+  const idxPlanMontE = col('cotizado mont e');
+  const idxPlanMont  = col('cotizado mont');
+
+  // HH por área — reales
+  const idxRealIng   = col('reales ing');
+  const idxRealMet   = col('reales met');
+  const idxRealInox  = col('reales inox');
+  const idxRealGyp   = col('reales gyp');
+  const idxRealMontE = col('reales montaje e', 'reales mont e');
+  const idxRealMont  = col('reales montaje', 'reales mont');
   const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
   const idxFinReal   = col('entrega final');
 
@@ -83,8 +99,24 @@ function mapRowsToProjects(rows) {
         budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
         finReal:     parseExcelDate(idxFinReal !== -1 ? row[idxFinReal] : null),
         _rowIdx: i + 1,  // posición 0-based en rows[] (0 = header), usada para write-back
-        hhPlan:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
-        hhReal:  { ing: 0, cyp: 0, metneg: 0, metinox: 0, gyp: 0, mongral: 0, monelec: 0, testeo: 0 },
+        hhPlan: {
+          ing:    idxPlanIng   !== -1 ? (Number(row[idxPlanIng])   || 0) : 0,
+          metneg: idxPlanMet   !== -1 ? (Number(row[idxPlanMet])   || 0) : 0,
+          metinox:idxPlanInox  !== -1 ? (Number(row[idxPlanInox])  || 0) : 0,
+          gyp:    idxPlanGyp   !== -1 ? (Number(row[idxPlanGyp])   || 0) : 0,
+          mongral:idxPlanMont  !== -1 ? (Number(row[idxPlanMont])  || 0) : 0,
+          monelec:idxPlanMontE !== -1 ? (Number(row[idxPlanMontE]) || 0) : 0,
+          cyp: 0, testeo: 0,
+        },
+        hhReal: {
+          ing:    idxRealIng   !== -1 ? (Number(row[idxRealIng])   || 0) : 0,
+          metneg: idxRealMet   !== -1 ? (Number(row[idxRealMet])   || 0) : 0,
+          metinox:idxRealInox  !== -1 ? (Number(row[idxRealInox])  || 0) : 0,
+          gyp:    idxRealGyp   !== -1 ? (Number(row[idxRealGyp])   || 0) : 0,
+          mongral:idxRealMont  !== -1 ? (Number(row[idxRealMont])  || 0) : 0,
+          monelec:idxRealMontE !== -1 ? (Number(row[idxRealMontE]) || 0) : 0,
+          cyp: 0, testeo: 0,
+        },
         budget:  { total: 0, consumido: 0, materiales: 0, manoObra: 0 },
         gantt:   [],
         replans: [],
