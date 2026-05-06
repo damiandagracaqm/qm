@@ -127,6 +127,110 @@ function mapRowsToProjects(rows) {
   return { projects, budgetColIdx: idxBudgetPct };
 }
 
+// ── Planning Excel parser ──────────────────────────────────────────────────
+
+function parsePlanningRows(rows) {
+  if (!rows || rows.length < 2) return new Map();
+  const headers = rows[0].map(h => String(h ?? '').toLowerCase().trim());
+  const col = (...names) => {
+    for (const name of names) {
+      const idx = headers.findIndex(h => h.includes(name));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+  const idxId     = col('serie', 'n°', 'nro', 'número', 'numero', 'codigo', 'código', 'id');
+  const idxTaller = col('sector', 'taller', 'área', 'area', 'etapa', 'fase', 'proceso');
+  const idxStart  = col('comienzo', 'inicio', 'start');
+  const idxEnd    = col('fin', 'end', 'término', 'termino');
+
+  const map = new Map();
+  rows.slice(1).forEach(row => {
+    if (!row || row.every(c => c === null || c === undefined || c === '')) return;
+    const id = idxId !== -1 ? String(row[idxId] ?? '').trim() : '';
+    if (!id || id === '0') return;
+    const taller = idxTaller !== -1 ? String(row[idxTaller] ?? '').trim() : '';
+    const start  = parseExcelDate(idxStart !== -1 ? row[idxStart] : null);
+    const end    = parseExcelDate(idxEnd   !== -1 ? row[idxEnd]   : null);
+    if (!taller || start === '—' || end === '—') return;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push({ area: taller, start, end, pct: 0 });
+  });
+  return map;
+}
+
+export function parsePlanningWorkbook(workbook) {
+  const sheetName = workbook.SheetNames.find(n =>
+    n.toLowerCase().includes('planif')
+  ) ?? workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  console.log('Hoja planificación:', sheetName, '| filas:', rows.length);
+  return parsePlanningRows(rows);
+}
+
+export function PlanningImport({ onImport }) {
+  const inputRef = useRef(null);
+
+  function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const workbook = XLSX.read(e.target.result, { type: 'array', cellDates: false });
+        const map = parsePlanningWorkbook(workbook);
+        console.log('Proyectos con planificación:', map.size);
+        onImport(map);
+      } catch (err) {
+        console.error('Error leyendo planificación:', err);
+        alert('Error leyendo el archivo: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file?.name.endsWith('.xlsx') || file?.name.endsWith('.xls')) handleFile(file);
+    else alert('Seleccioná un archivo .xlsx');
+  }
+
+  return (
+    <div
+      onDrop={handleDrop}
+      onDragOver={e => e.preventDefault()}
+      onClick={() => inputRef.current?.click()}
+      style={{
+        border: '2px dashed var(--line-2)',
+        borderRadius: 10, padding: '32px 24px', textAlign: 'center',
+        cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.875rem',
+        transition: 'border-color .2s', background: 'var(--surface)',
+      }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line-2)'}
+    >
+      <div style={{ fontSize: '2rem', marginBottom: 8 }}>📅</div>
+      <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--ink)' }}>
+        Arrastrá el Excel de planificación aquí
+      </div>
+      <div>o hacé click para seleccionar el archivo</div>
+      <div style={{ marginTop: 8, fontSize: '0.75rem', opacity: 0.6, fontFamily: 'var(--font-mono)' }}>
+        CopiaPlanificacion_PruebaApp.xlsx · hoja "Planificacion mensual"
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: 'none' }}
+        onChange={e => handleFile(e.target.files[0])}
+      />
+    </div>
+  );
+}
+
+// ── Main Excel write-back ──────────────────────────────────────────────────
+
 export function updateWorkbookBudgetPct(workbook, sheetName, rowIdx, colIdx, pct) {
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) return;

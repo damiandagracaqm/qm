@@ -1,8 +1,35 @@
 import { Fragment } from 'react';
 import { AREAS } from '../../data/areas';
 
-const TODAY = new Date('2026-04-22');
+const TODAY = new Date();
 const MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+// Mapping flexible: nombres de taller del Excel → area key
+const TALLER_MAP = [
+  { keys: ['ingenieria', 'ing'], ak: 'ing' },
+  { keys: ['corte', 'plegado', 'cyp'], ak: 'cyp' },
+  { keys: ['metalurgia negro', 'met negro', 'met. negro', 'metalurgia neg', 'metneg', 'metalurgia tigre'], ak: 'metneg' },
+  { keys: ['metalurgia inox', 'met inox', 'met. inox', 'inoxidable', 'metinox'], ak: 'metinox' },
+  { keys: ['granalla', 'pintura', 'gyp'], ak: 'gyp' },
+  { keys: ['montaje gral', 'montaje general', 'mongral'], ak: 'mongral' },
+  { keys: ['montaje elec', 'montaje electrico', 'electrico', 'monelec'], ak: 'monelec' },
+  { keys: ['testeo'], ak: 'testeo' },
+];
+
+function norm(s) {
+  return (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+function findArea(name, idx) {
+  const n = norm(name);
+  if (!n) return AREAS[idx % AREAS.length];
+  for (const { keys, ak } of TALLER_MAP) {
+    if (keys.some(k => n === k || n.includes(k) || k.includes(n))) {
+      return AREAS.find(a => a.k === ak) ?? AREAS[idx % AREAS.length];
+    }
+  }
+  return AREAS.find(a => norm(a.l) === n || norm(a.l).includes(n) || n.includes(norm(a.l))) ?? AREAS[idx % AREAS.length];
+}
 
 function parseDate(s) {
   if (!s || s === '—') return null;
@@ -10,8 +37,14 @@ function parseDate(s) {
 }
 
 export function GanttChart({ gantt }) {
-  const dates = gantt.flatMap(g => [parseDate(g.start), parseDate(g.end)]).filter(Boolean);
-  if (!dates.length) return null;
+  const dates = (gantt ?? []).flatMap(g => [parseDate(g.start), parseDate(g.end)]).filter(Boolean);
+  if (!dates.length) {
+    return (
+      <div style={{ padding: '28px 24px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
+        Sin planificación registrada para este proyecto.
+      </div>
+    );
+  }
 
   const minD = new Date(Math.min(...dates.map(d => d.getTime())));
   const maxD = new Date(Math.max(...dates.map(d => d.getTime())));
@@ -46,7 +79,7 @@ export function GanttChart({ gantt }) {
         </div>
 
         {gantt.map((g, i) => {
-          const area = AREAS.find(a => a.l === g.area || a.k === g.ak) ?? AREAS[0];
+          const area = findArea(g.area ?? g.ak, i);
           const left = pct(g.start);
           const width = pct(g.end) - left;
           return (

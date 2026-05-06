@@ -267,10 +267,12 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
 
       <div className="card">
         <div className="card-h">
-          <span className="card-t">Cronograma · avance por etapa</span>
-          <span className="card-sub">Vista semanal</span>
+          <span className="card-t">Planificación por taller</span>
+          <span className="card-sub">
+            {(p.gantt ?? []).length > 0 ? `${p.gantt.length} etapas` : 'Sin datos de planificación'}
+          </span>
         </div>
-        <GanttChart gantt={p.gantt} />
+        <GanttChart gantt={p.gantt ?? []} />
       </div>
 
       <div className="card">

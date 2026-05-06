@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
-import { fetchProjects, updateBudgetPct } from './services/graphService';
+import { fetchProjects, fetchPlanning, updateBudgetPct } from './services/graphService';
 import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
 import { AprobacionesPage } from './components/pages/AprobacionesPage';
 import { NuevoProyectoPage } from './components/pages/NuevoProyectoPage';
 import { DetailView } from './components/detail/DetailView';
-import { ExcelImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
+import { ExcelImport, PlanningImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
 
 function Skel({ w, h = 12, block = false }) {
   return (
@@ -150,6 +150,8 @@ export default function App() {
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [showPlanningImport, setShowPlanningImport] = useState(false);
+  const [planningMap, setPlanningMap] = useState(new Map());
   const [refreshKey, setRefreshKey] = useState(0);
   const workbookRef = useRef(null);
   const [xlsxMeta, setXlsxMeta] = useState(null);   // { sheetName, budgetColIdx }
@@ -163,13 +165,22 @@ export default function App() {
     if (!isAuthenticated) return;
     setLoadingXlsx(true);
     setXlsxError(null);
-    fetchProjects()
-      .then(({ projects: fetched, sheetNames, budgetColIdx }) => {
+    Promise.all([
+      fetchProjects(),
+      fetchPlanning().catch(err => {
+        console.warn('Planificación no disponible desde SharePoint:', err.message);
+        return new Map();
+      }),
+    ])
+      .then(([{ projects: fetched, sheetNames, budgetColIdx }, planMap]) => {
         console.log('Hojas encontradas:', sheetNames);
         if (fetched.length > 0) {
           setProjects(fetched);
           setXlsxSource('graph');
           setXlsxMeta({ sheetName: sheetNames[0], budgetColIdx: budgetColIdx ?? -1 });
+        }
+        if (planMap.size > 0) {
+          setPlanningMap(planMap);
         }
       })
       .catch(err => {
@@ -178,6 +189,22 @@ export default function App() {
       })
       .finally(() => setLoadingXlsx(false));
   }, [isAuthenticated, refreshKey]);
+
+  const mergedProjects = useMemo(() => {
+    if (planningMap.size === 0) return projects;
+    const normId = id => id.replace(/[\s\-_.]/g, '').toUpperCase();
+    const normMap = new Map();
+    planningMap.forEach((val, key) => normMap.set(normId(key), val));
+    return projects.map(p => ({
+      ...p,
+      gantt: planningMap.get(p.id) ?? normMap.get(normId(p.id)) ?? (p.gantt ?? []),
+    }));
+  }, [projects, planningMap]);
+
+  function handlePlanningImport(map) {
+    setPlanningMap(map);
+    setShowPlanningImport(false);
+  }
 
   function handleExcelImport(imported, sheetNames, meta) {
     if (imported.length > 0) {
@@ -199,7 +226,7 @@ export default function App() {
   function logout() { instance.logoutRedirect(); }
 
   function openDetail(id) {
-    const proj = projects.find(p => p.id === id);
+    const proj = mergedProjects.find(p => p.id === id);
     if (proj) { setCurrentProj(proj); setPage('detail'); }
   }
 
@@ -328,7 +355,7 @@ export default function App() {
             </button>
           )}
           <button
-            onClick={() => setShowImport(true)}
+            onClick={() => { setShowImport(true); setShowPlanningImport(false); }}
             style={{
               marginTop: 6, background: 'none', border: 'none', padding: 0,
               fontFamily: 'var(--font-mono)', fontSize: 10,
@@ -338,6 +365,26 @@ export default function App() {
           >
             {xlsxSource === 'none' ? 'Importar Excel' : 'Reimportar Excel'}
           </button>
+          {xlsxSource === 'graph' && planningMap.size > 0 && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'oklch(0.55 0.01 250)', marginTop: 4 }}>
+              Planif. {planningMap.size} proy.
+            </div>
+          )}
+          {xlsxSource !== 'graph' && (
+            <button
+              onClick={() => { setShowPlanningImport(true); setShowImport(false); }}
+              style={{
+                marginTop: 6, background: 'none', border: 'none', padding: 0,
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                color: planningMap.size > 0 ? 'oklch(0.55 0.01 250)' : 'var(--warn)',
+                cursor: 'pointer', textDecoration: 'underline', display: 'block',
+              }}
+            >
+              {planningMap.size > 0
+                ? `↺ Reimportar planificación (${planningMap.size})`
+                : 'Importar planificación'}
+            </button>
+          )}
           {hasPendingDownload && (
             <button
               onClick={doDownloadExcel}
@@ -391,6 +438,20 @@ export default function App() {
               </button>
             )}
           </div>
+        ) : showPlanningImport ? (
+          <div style={{ maxWidth: 480, margin: '60px auto', display: 'flex', flexDirection: 'column', gap: 16, padding: '0 24px' }}>
+            <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--ink)' }}>Importar planificación por taller</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--ink-3)', lineHeight: 1.6 }}>
+              Importá el archivo <span style={{ fontFamily: 'var(--font-mono)' }}>CopiaPlanificacion_PruebaApp.xlsx</span>.
+              Se leerá la hoja <span style={{ fontFamily: 'var(--font-mono)' }}>Planificacion mensual</span> con las columnas
+              <span style={{ fontFamily: 'var(--font-mono)' }}> Comienzo</span> y <span style={{ fontFamily: 'var(--font-mono)' }}>Fin</span> por taller.
+              Los proyectos sin planificación mostrarán el Gantt vacío.
+            </div>
+            <PlanningImport onImport={handlePlanningImport} />
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowPlanningImport(false)} style={{ alignSelf: 'center' }}>
+              Cancelar
+            </button>
+          </div>
         ) : !isAuthenticated ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, color: 'oklch(0.55 0.01 250)' }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.4">
@@ -428,8 +489,8 @@ export default function App() {
               </div>
             </div>
 
-            {page === 'kpi' && <KpiPage projects={projects} onOpenDetail={openDetail} />}
-            {page === 'proyectos' && <ProyectosPage projects={projects} onOpenDetail={openDetail} />}
+            {page === 'kpi' && <KpiPage projects={mergedProjects} onOpenDetail={openDetail} />}
+            {page === 'proyectos' && <ProyectosPage projects={mergedProjects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
             {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}
             {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} />}

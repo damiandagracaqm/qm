@@ -2,6 +2,7 @@ import { msalInstance, loginRequest } from '../auth/msalConfig';
 
 const SHAREPOINT_URL = 'https://qmequipment123.sharepoint.com/:x:/r/sites/Produccin/Documentos%20compartidos/Proyectos/Proyectos%202.0.xlsx?d=wfe883325926f4ea98fc660906c6137c3&csf=1&web=1&e=wbxezq';
 const SHEET_NAME = 'Estado de proyectos';
+const PLANNING_SHEET = 'Planificacion mensual';
 
 function encodeSharingUrl(url) {
   return 'u!' + btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -13,8 +14,62 @@ async function resolveDriveItem() {
   if (_driveItem) return _driveItem;
   const shareId = encodeSharingUrl(SHAREPOINT_URL);
   const item = await graphGet(`/shares/${shareId}/driveItem`);
-  _driveItem = { driveId: item.parentReference.driveId, itemId: item.id };
+  _driveItem = {
+    driveId:    item.parentReference.driveId,
+    itemId:     item.id,
+    parentId:   item.parentReference.id,
+    parentPath: item.parentReference.path ?? '',
+  };
   return _driveItem;
+}
+
+// Busca el Excel de planificación en la misma carpeta que el principal (se cachea por sesión)
+let _planningItem = null;
+async function resolvePlanningDriveItem() {
+  if (_planningItem) return _planningItem;
+  const { driveId, parentId, parentPath } = await resolveDriveItem();
+
+  let files;
+
+  // Estrategia 1: navegación por path (parentReference.path → "…/root:/Carpeta/Subcarpeta")
+  const afterRoot = parentPath.includes('root:') ? parentPath.split('root:')[1] : '';
+  if (afterRoot) {
+    try {
+      const encodedPath = afterRoot.split('/').map(s => s ? encodeURIComponent(s) : '').join('/');
+      const resp = await graphGet(`/drives/${driveId}/root:${encodedPath}:/children?$select=id,name`);
+      files = resp.value;
+    } catch (e) {
+      console.warn('[Planning] carpeta por path falló:', e.message);
+    }
+  }
+
+  // Estrategia 2: navegación por parentId
+  if (!files && parentId) {
+    try {
+      const resp = await graphGet(`/drives/${driveId}/items/${parentId}/children?$select=id,name`);
+      files = resp.value;
+    } catch (e) {
+      console.warn('[Planning] carpeta por parentId falló:', e.message);
+    }
+  }
+
+  if (!files?.length) {
+    throw new Error('No se pudo listar la carpeta Proyectos en SharePoint.');
+  }
+
+  const found = files.find(f => {
+    const n = f.name.toLowerCase();
+    return n.includes('planificacion') || n.includes('planificación');
+  });
+
+  if (!found) {
+    throw new Error(
+      `No se encontró el archivo de planificación. Archivos en la carpeta: ${files.map(f => f.name).join(', ')}`
+    );
+  }
+
+  _planningItem = { driveId, itemId: found.id };
+  return _planningItem;
 }
 
 async function getToken() {
@@ -187,10 +242,65 @@ function parseExcelDate(value) {
   return str;
 }
 
+function parsePlanningRows(rows) {
+  if (!rows || rows.length < 2) return new Map();
+  const headers = rows[0].map(h => String(h ?? '').toLowerCase().trim());
+  console.log('[Planning] Headers encontrados:', rows[0]);
+  const col = (...names) => {
+    for (const name of names) {
+      const idx = headers.findIndex(h => h.includes(name));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+  const idxId     = col('serie', 'n°', 'nro', 'número', 'numero', 'codigo', 'código', 'id');
+  const idxTaller = col('sector', 'taller', 'área', 'area', 'etapa', 'fase', 'proceso');
+  const idxStart  = col('comienzo', 'inicio', 'start');
+  const idxEnd    = col('fin', 'end', 'término', 'termino');
+  const map = new Map();
+  rows.slice(1).forEach(row => {
+    if (!row || row.every(c => c === null || c === undefined || c === '')) return;
+    const id = idxId !== -1 ? String(row[idxId] ?? '').trim() : '';
+    if (!id || id === '0') return;
+    const taller = idxTaller !== -1 ? String(row[idxTaller] ?? '').trim() : '';
+    const start  = parseExcelDate(idxStart !== -1 ? row[idxStart] : null);
+    const end    = parseExcelDate(idxEnd   !== -1 ? row[idxEnd]   : null);
+    if (!taller || start === '—' || end === '—') return;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push({ area: taller, start, end, pct: 0 });
+  });
+  return map;
+}
+
 export async function fetchProjects() {
   const range = await getSheetData();
   const { projects, budgetColIdx } = mapRowsToProjects(range.values);
   return { projects, sheetNames: [SHEET_NAME], budgetColIdx };
+}
+
+export async function fetchPlanning() {
+  const { driveId, itemId } = await resolvePlanningDriveItem();
+
+  // Listar hojas para encontrar el nombre exacto (evita error por acento/mayúsculas)
+  const { value: sheets } = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=id,name`
+  );
+
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // Prioriza la hoja que contenga 'mensual' (ej: "Planificacion mensual") sobre otras que solo digan 'planificacion'
+  const sheet =
+    sheets?.find(s => norm(s.name).includes('mensual')) ??
+    sheets?.find(s => norm(s.name).includes('planificacion'));
+
+  if (!sheet) {
+    throw new Error(`Hoja de planificación no encontrada. Hojas disponibles: ${sheets?.map(s => s.name).join(', ')}`);
+  }
+  console.log('[Planning] Usando hoja:', sheet.name);
+
+  const range = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet.name)}')/usedRange`
+  );
+  return parsePlanningRows(range.values);
 }
 
 export async function addProject({ id, desc, ldp, finEst }) {

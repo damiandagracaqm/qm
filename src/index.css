@@ -1086,6 +1086,50 @@ input, select, textarea { font: inherit; }
   color: var(--ink-3);
 }
 
+/* ── meeting view ──────────────────────────────────────── */
+.meet-row {
+  display: grid;
+  grid-template-columns: 12px 88px 1fr 132px 100px 92px 14px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.meet-row:hover { background: var(--surface-2); }
+.meet-head {
+  cursor: default;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.meet-head:hover { background: var(--surface-2); }
+
+.ldp-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  background: oklch(0.96 0.004 80);
+  border-bottom: 1px solid var(--line);
+}
+.ldp-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ldp-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
 /* causes */
 .cause-row {
   display: grid;
