@@ -102,10 +102,6 @@ export function KpiPage({ projects, onOpenDetail }) {
   const activos    = useMemo(() => projects.filter(p => !ESTADOS_EXCLUIDOS.has(p.estado)), [projects]);
   const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.includes(p.estado)), [projects]);
 
-  const enTiempo  = activos.filter(p => p.desvio === 0).length;
-  const conDesvio = activos.filter(p => p.desvio > 0 && p.desvio <= 30).length;
-  const criticos  = activos.filter(p => p.desvio > 30).length;
-
   const clientes = useMemo(() => {
     const set = new Set(activos.map(p => p.cliente).filter(Boolean));
     return ['Todos', ...Array.from(set).sort()];
@@ -115,6 +111,16 @@ export function KpiPage({ projects, onOpenDetail }) {
     clienteSel === 'Todos' ? activos : activos.filter(p => p.cliente === clienteSel),
     [activos, clienteSel]
   );
+
+  const entregadosFiltrados = useMemo(() =>
+    clienteSel === 'Todos' ? entregados : entregados.filter(p => p.cliente === clienteSel),
+    [entregados, clienteSel]
+  );
+
+  const TODAY = new Date().toISOString().split('T')[0];
+  const enTiempo  = proyFiltrados.filter(p => p.finEst && p.finEst !== '—' && p.finEst >= TODAY).length;
+  const conDesvio = proyFiltrados.filter(p => p.desvio > 0 && p.desvio <= 30).length;
+  const criticos  = proyFiltrados.filter(p => p.desvio > 30).length;
 
   const ldpGroups = useMemo(() => {
     const map = {};
@@ -145,14 +151,14 @@ export function KpiPage({ projects, onOpenDetail }) {
       <div className="kpi-grid">
         <div className="kpi-cell">
           <span className="kpi-label">Activos</span>
-          <span className="kpi-value">{activos.length}</span>
-          <span className="kpi-trend">En planta</span>
+          <span className="kpi-value">{proyFiltrados.length}</span>
+          <span className="kpi-trend">{clienteSel === 'Todos' ? 'En planta' : clienteSel}</span>
         </div>
         <div className="kpi-cell">
           <span className="kpi-label">En tiempo</span>
           <span className="kpi-value ok">{enTiempo}</span>
           <span className="kpi-trend">
-            {activos.length > 0 ? Math.round(enTiempo / activos.length * 100) : 0}% del activo
+            {proyFiltrados.length > 0 ? Math.round(enTiempo / proyFiltrados.length * 100) : 0}% del activo
           </span>
         </div>
         <div className="kpi-cell">
@@ -167,8 +173,8 @@ export function KpiPage({ projects, onOpenDetail }) {
         </div>
         <div className="kpi-cell">
           <span className="kpi-label">Entregados</span>
-          <span className="kpi-value">{entregados.length}</span>
-          <span className="kpi-trend">total histórico</span>
+          <span className="kpi-value">{entregadosFiltrados.length}</span>
+          <span className="kpi-trend">{clienteSel === 'Todos' ? 'total histórico' : clienteSel}</span>
         </div>
       </div>
 
