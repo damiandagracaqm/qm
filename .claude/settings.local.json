@@ -18,7 +18,8 @@
       "Bash(awk -F, '{for\\(i=1;i<=NF;i++\\) printf \"%d: %s\\\\n\", i, $i}')",
       "Skill(update-config)",
       "Bash(ps *)",
-      "Bash(kill 67720 *)"
+      "Bash(kill 67720 *)",
+      "PowerShell(netstat *)"
     ]
   }
 }
