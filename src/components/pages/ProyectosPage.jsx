@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { ESTADIOS, ESTADO_A_PASO } from '../../data/areas';
 import { StatusTag } from '../common/StatusTag';
 
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
 function projProgress(p) {
   const plan = Object.values(p.hhPlan || {}).reduce((a, b) => a + b, 0);
   const real = Object.values(p.hhReal || {}).reduce((a, b) => a + b, 0);
@@ -26,6 +28,17 @@ function ChevIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="m9 18 6-6-6-6"/>
+    </svg>
+  );
+}
+
+function ChevDownIcon({ open }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.18s' }}
+    >
+      <path d="m6 9 6 6 6-6"/>
     </svg>
   );
 }
@@ -120,6 +133,18 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const [filterEstado, setFilterEstado] = useState('Todos');
   const [groupBy, setGroupBy] = useState('cliente');
   const [view, setView] = useState('grid');
+  const [expanded, setExpanded] = useState(new Set());
+
+  function toggleExpanded(key) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const isEntregados = filterEstado === 'Entregados';
 
   const filtered = useMemo(() => {
     return projects.filter(p => {
@@ -136,11 +161,36 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   }, [projects, search, filterEstado]);
 
   const grouped = useMemo(() => {
+    if (isEntregados) return null;
     if (groupBy === 'none') return [['Todos', filtered]];
     const m = {};
     filtered.forEach(p => { (m[p[groupBy]] ||= []).push(p); });
     return Object.entries(m).sort((a, b) => b[1].length - a[1].length);
-  }, [filtered, groupBy]);
+  }, [filtered, groupBy, isEntregados]);
+
+  const deliveryGroups = useMemo(() => {
+    if (!isEntregados) return null;
+    const byYearMonth = {};
+    filtered.forEach(p => {
+      const date = p.finEst || p.finPlan || '';
+      const parts = date.split('-');
+      const year = parts[0];
+      const monthIdx = parts[1] ? parseInt(parts[1], 10) - 1 : null;
+      if (!year || monthIdx === null) return;
+      if (!byYearMonth[year]) byYearMonth[year] = {};
+      const monthKey = parts[1];
+      if (!byYearMonth[year][monthKey]) byYearMonth[year][monthKey] = { idx: monthIdx, items: [] };
+      byYearMonth[year][monthKey].items.push(p);
+    });
+    return Object.entries(byYearMonth)
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, months]) => ({
+        year,
+        months: Object.entries(months)
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([key, { idx, items }]) => ({ key, idx, items })),
+      }));
+  }, [filtered, isEntregados]);
 
   return (
     <div className="page-body">
@@ -162,19 +212,23 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             {f}
           </button>
         ))}
-        <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          Agrupar
-        </span>
-        {GROUP_OPTIONS.map(([k, l]) => (
-          <button
-            key={k}
-            className={`filter-btn ${groupBy === k ? 'active' : ''}`}
-            onClick={() => setGroupBy(k)}
-          >
-            {l}
-          </button>
-        ))}
+        {!isEntregados && (
+          <>
+            <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Agrupar
+            </span>
+            {GROUP_OPTIONS.map(([k, l]) => (
+              <button
+                key={k}
+                className={`filter-btn ${groupBy === k ? 'active' : ''}`}
+                onClick={() => setGroupBy(k)}
+              >
+                {l}
+              </button>
+            ))}
+          </>
+        )}
         <div className="view-toggle">
           <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>
             <GridIcon /> Grilla
@@ -185,25 +239,95 @@ export function ProyectosPage({ projects, onOpenDetail }) {
         </div>
       </div>
 
-      {grouped.map(([key, items]) => {
+      {isEntregados && deliveryGroups && deliveryGroups.map(({ year, months }) => {
+        const yearOpen = expanded.has(year);
+        const yearTotal = months.reduce((a, m) => a + m.items.length, 0);
+        return (
+          <div className="year-group" key={year}>
+            <button className="year-header" onClick={() => toggleExpanded(year)}>
+              <ChevDownIcon open={yearOpen} />
+              <span className="year-label">{year}</span>
+              <span className="year-count mono">{yearTotal} {yearTotal === 1 ? 'proyecto' : 'proyectos'}</span>
+            </button>
+
+            {yearOpen && months.map(({ key, idx, items }) => {
+              const monthKey = `${year}-${key}`;
+              const monthOpen = expanded.has(monthKey);
+              return (
+                <div className="month-group" key={key}>
+                  <button className="month-header" onClick={() => toggleExpanded(monthKey)}>
+                    <ChevDownIcon open={monthOpen} />
+                    <span className="month-label">{MESES[idx]}</span>
+                    <span className="month-count mono">{items.length} {items.length === 1 ? 'proyecto' : 'proyectos'}</span>
+                  </button>
+
+                  {monthOpen && (
+                    view === 'grid' ? (
+                      <div className="proj-grid">
+                        {items.map(p => (
+                          <ProjectCard key={p.id} p={p} onClick={() => onOpenDetail(p.id)} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="proj-table">
+                        <div className="proj-row head">
+                          <span>ID</span><span>Descripción</span><span>Cliente</span><span>LDP</span>
+                          <span>Avance</span><span style={{ textAlign: 'right' }}>Desvío</span><span>Estadío</span><span />
+                        </div>
+                        {items.map(p => {
+                          const pr = projProgress(p);
+                          return (
+                            <div className="proj-row" key={p.id} onClick={() => onOpenDetail(p.id)}>
+                              <span className="p-id mono">{p.id}</span>
+                              <span className="p-desc">
+                                {p.desc}
+                                <small>Inicio {p.inicio} · Entrega {p.finEst}</small>
+                              </span>
+                              <span className="p-cli">{p.cliente}</span>
+                              <span className="p-ldp">{p.ldp}</span>
+                              <div className="p-progress">
+                                <div className="p-bar"><div className="p-fill" style={{ width: `${pr}%` }} /></div>
+                                <span className="p-pct">{pr}%</span>
+                              </div>
+                              <span className={`p-desv ${desvioKind(p.desvio)}`}>
+                                {p.desvio === 0 ? '—' : `+${p.desvio}d`}
+                              </span>
+                              <span><span className="chip mono">{p.estado}</span></span>
+                              <span className="chev"><ChevIcon /></span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {!isEntregados && grouped && grouped.map(([key, items]) => {
         const totalHHReal = items.reduce((a, p) => a + Object.values(p.hhReal || {}).reduce((x, y) => x + y, 0), 0);
         const totalHHPlan = items.reduce((a, p) => a + Object.values(p.hhPlan || {}).reduce((x, y) => x + y, 0), 0);
         const atrasados = items.filter(p => p.desvio > 0).length;
+        const groupOpen = groupBy === 'none' || expanded.has(key);
 
         return (
           <div className="client-group" key={key}>
             {groupBy !== 'none' && (
-              <div className="client-h">
+              <button className="client-h" onClick={() => toggleExpanded(key)}>
+                <ChevDownIcon open={groupOpen} />
                 <span className="c-name">{key}</span>
                 <span className="c-count mono">{items.length} proy.</span>
                 <div className="client-h-meta">
                   <span>HH <b className="mono">{totalHHReal.toLocaleString()}</b>/{totalHHPlan.toLocaleString()}</span>
                   <span>Atrasados <b className="mono">{atrasados}</b></span>
                 </div>
-              </div>
+              </button>
             )}
 
-            {view === 'grid' ? (
+            {groupOpen && (view === 'grid' ? (
               <div className="proj-grid">
                 {items.map(p => (
                   <ProjectCard key={p.id} p={p} onClick={() => onOpenDetail(p.id)} />
@@ -251,7 +375,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
                   <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)' }}>Sin resultados.</div>
                 )}
               </div>
-            )}
+            ))}
           </div>
         );
       })}
