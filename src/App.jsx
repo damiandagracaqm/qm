@@ -222,8 +222,8 @@ export default function App() {
     }
   }
 
-  function login() { instance.loginPopup(loginRequest).catch(console.error); }
-  function logout() { instance.logoutPopup(); }
+  function login() { instance.loginRedirect(loginRequest).catch(console.error); }
+  function logout() { instance.logoutRedirect(); }
 
   function openDetail(id) {
     const proj = mergedProjects.find(p => p.id === id);
