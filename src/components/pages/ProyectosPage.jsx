@@ -1,19 +1,15 @@
 import { useState, useMemo } from 'react';
-import { ESTADIOS, ESTADO_A_PASO } from '../../data/areas';
-import { StatusTag } from '../common/StatusTag';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const ESTADOS_EXCLUIDOS = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
+const ESTADOS_ENTREGADO = ['Entregado', 'Entregado a NQN'];
+const FILTERS = ['Todos', 'Críticos', 'Entregados', 'Stand by'];
 
-function projProgress(p) {
-  const plan = Object.values(p.hhPlan || {}).reduce((a, b) => a + b, 0);
-  const real = Object.values(p.hhReal || {}).reduce((a, b) => a + b, 0);
-  return plan > 0 ? Math.min(100, Math.round(real / plan * 100)) : 0;
-}
-
-function desvioKind(d) {
-  if (d === 0) return 'zero';
-  if (d <= 30) return 'low';
-  return 'high';
+function desvioColor(d) {
+  if (d == null) return 'var(--ink-3)';
+  if (d > 30)   return 'var(--bad)';
+  if (d > 0)    return 'var(--warn)';
+  return 'var(--ok)';
 }
 
 function SearchIcon() {
@@ -26,7 +22,7 @@ function SearchIcon() {
 
 function ChevIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="m9 18 6-6-6-6"/>
     </svg>
   );
@@ -35,154 +31,164 @@ function ChevIcon() {
 function ChevDownIcon({ open }) {
   return (
     <svg
-      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.18s' }}
+      width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.18s', flexShrink: 0 }}
     >
       <path d="m6 9 6 6 6-6"/>
     </svg>
   );
 }
 
-function GridIcon() {
+function StatusDot({ desvio }) {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-    </svg>
+    <span style={{
+      width: 8, height: 8, borderRadius: '50%',
+      background: desvioColor(desvio),
+      flexShrink: 0, display: 'inline-block',
+    }} />
   );
 }
 
-function ListIcon() {
+function DesvioTag({ desvio }) {
+  if (desvio == null) return <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>—</span>;
+  const color = desvioColor(desvio);
+  const soft  = desvio > 30 ? 'var(--bad-soft)' : desvio > 0 ? 'var(--warn-soft)' : 'var(--ok-soft)';
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
-    </svg>
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: desvio > 30 ? 600 : 400,
+      color, background: soft, padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
+    }}>
+      {desvio === 0 ? 'En tiempo' : `+${desvio} días`}
+    </span>
   );
 }
 
-function Pipeline({ estadio }) {
-  const paso = ESTADO_A_PASO[estadio] ?? -1;
-  const isFinished = paso >= 8;
+function ProjectRow({ p, onOpenDetail }) {
   return (
-    <div className="pipeline">
-      {ESTADIOS.map((e, i) => {
-        let cls = '';
-        if (isFinished)   cls = 'done';
-        else if (i < paso) cls = 'done';
-        else if (i === paso) cls = 'active';
-        return <div key={e} className={`pipe-step ${cls}`} title={e} />;
-      })}
+    <div className="meet-row" onClick={() => onOpenDetail?.(p.id)}>
+      <StatusDot desvio={p.desvio} />
+      <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{p.id}</span>
+      <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.desc}</span>
+      <span className="chip mono" style={{ whiteSpace: 'nowrap', fontSize: 10.5, justifySelf: 'start' }}>{p.estado}</span>
+      <span className="mono" style={{ fontSize: 11, color: p.desvio > 0 ? desvioColor(p.desvio) : 'var(--ink-2)', whiteSpace: 'nowrap' }}>
+        {p.finEst && p.finEst !== '—' ? p.finEst : '—'}
+      </span>
+      <DesvioTag desvio={p.desvio} />
+      <span style={{ color: 'var(--ink-3)' }}><ChevIcon /></span>
     </div>
   );
 }
 
-function ProjectCard({ p, onClick }) {
-  const pr = projProgress(p);
-  let kind = '';
-  if (p.estado === 'Stand by' || p.estado === 'Cancelado') kind = 'is-pause';
-  else if (p.desvio > 30) kind = 'is-critical';
-  else if (p.desvio > 0) kind = 'is-warn';
-  else if (p.estado === 'Entregado' || p.estado === 'Entregado a NQN') kind = 'is-ok';
-
-  const desvioLabel = p.desvio === 0 ? 'En tiempo' : `+${p.desvio}d`;
-
+function LdpGroup({ ldp, projects, onOpenDetail, isLast, isOpen, onToggle }) {
+  const criticals = projects.filter(p => p.desvio > 30).length;
+  const warns     = projects.filter(p => p.desvio > 0 && p.desvio <= 30).length;
+  const sorted    = [...projects].sort((a, b) => (b.desvio ?? 0) - (a.desvio ?? 0));
   return (
-    <div className={`pcard ${kind}`} onClick={onClick}>
-      <div className="pcard-tip">
-        {p.desc}
-        <small>{p.cliente} · LDP {p.ldp}</small>
+    <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--line)' }}>
+      <div className="ldp-h" style={{ cursor: 'pointer' }} onClick={onToggle}>
+        <ChevDownIcon open={isOpen} />
+        <span className="ldp-name">{ldp}</span>
+        <span className="ldp-count">{projects.length} proy.</span>
+        {criticals > 0 && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--bad)', background: 'var(--bad-soft)', padding: '1px 6px', borderRadius: 3 }}>
+            {criticals} crítico{criticals > 1 ? 's' : ''}
+          </span>
+        )}
+        {warns > 0 && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'oklch(0.5 0.13 75)', background: 'var(--warn-soft)', padding: '1px 6px', borderRadius: 3 }}>
+            {warns} con desvío
+          </span>
+        )}
       </div>
-      <div className="pcard-h">
-        <div>
-          <div className="pcard-id">{p.id}</div>
-          <div className="pcard-cli">{p.cliente}</div>
-        </div>
-        <StatusTag estado={p.estado} />
-      </div>
-
-      <Pipeline estadio={p.estado} />
-
-      <div className="pcard-stage">
-        <span>{p.estado}</span>
-        {p.prox && p.prox !== '—' && <span className="next">→ {p.prox}</span>}
-      </div>
-
-      <div className="pcard-foot">
-        <div>
-          <span className="l">Avance</span>
-          <div className="pcard-pct">
-            <div className="pcard-pct-bar"><i style={{ width: `${pr}%` }} /></div>
-            <span className="v">{pr}%</span>
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <span className="l">Desvío</span>
-          <span className={`p-desv ${desvioKind(p.desvio)}`} style={{ fontSize: 11.5 }}>{desvioLabel}</span>
-        </div>
-      </div>
+      {isOpen && sorted.map(p => <ProjectRow key={p.id} p={p} onOpenDetail={onOpenDetail} />)}
     </div>
   );
 }
-
-const FILTERS = ['Todos', 'En proceso', 'Críticos', 'Entregados', 'Stand by'];
-const ESTADOS_EXCLUIDOS = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
-const GROUP_OPTIONS = [['cliente', 'Cliente'], ['ldp', 'LDP'], ['none', 'Ninguno']];
 
 export function ProyectosPage({ projects, onOpenDetail }) {
-  const [search, setSearch] = useState('');
+  const [search, setSearch]           = useState('');
   const [filterEstado, setFilterEstado] = useState('Todos');
-  const [groupBy, setGroupBy] = useState('cliente');
-  const [view, setView] = useState('grid');
-  const [expanded, setExpanded] = useState(new Set());
+  const [clienteSel, setClienteSel]   = useState('Todos');
+  const [expanded, setExpanded]       = useState(new Set());
 
   function toggleExpanded(key) {
     setExpanded(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
 
   const isEntregados = filterEstado === 'Entregados';
 
-  const filtered = useMemo(() => {
-    return projects.filter(p => {
-      const q = search.toLowerCase();
-      const m = !q || p.id.toLowerCase().includes(q) || (p.desc || '').toLowerCase().includes(q) ||
-        (p.cliente || '').toLowerCase().includes(q) || (p.ldp || '').toLowerCase().includes(q);
-      const e = filterEstado === 'Todos'
-        || (filterEstado === 'En proceso' && !ESTADOS_EXCLUIDOS.has(p.estado))
-        || (filterEstado === 'Críticos' && p.desvio > 30)
-        || (filterEstado === 'Entregados' && (p.estado === 'Entregado' || p.estado === 'Entregado a NQN'))
-        || (filterEstado === 'Stand by' && p.estado === 'Stand by');
-      return m && e;
-    });
-  }, [projects, search, filterEstado]);
+  const activos    = useMemo(() => projects.filter(p => !ESTADOS_EXCLUIDOS.has(p.estado)), [projects]);
+  const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.includes(p.estado)), [projects]);
 
-  const grouped = useMemo(() => {
-    if (isEntregados) return null;
-    if (groupBy === 'none') return [['Todos', filtered]];
-    const m = {};
-    filtered.forEach(p => { (m[p[groupBy]] ||= []).push(p); });
-    return Object.entries(m).sort((a, b) => b[1].length - a[1].length);
-  }, [filtered, groupBy, isEntregados]);
+  const clientes = useMemo(() => {
+    const set = new Set(activos.map(p => p.cliente).filter(Boolean));
+    return ['Todos', ...Array.from(set).sort()];
+  }, [activos]);
+
+  const activosFiltrados = useMemo(() =>
+    clienteSel === 'Todos' ? activos : activos.filter(p => p.cliente === clienteSel),
+    [activos, clienteSel]
+  );
+  const entregadosFiltrados = useMemo(() =>
+    clienteSel === 'Todos' ? entregados : entregados.filter(p => p.cliente === clienteSel),
+    [entregados, clienteSel]
+  );
+
+  const TODAY     = new Date().toISOString().split('T')[0];
+  const enTiempo  = activosFiltrados.filter(p => p.finEst && p.finEst !== '—' && p.finEst >= TODAY).length;
+  const conDesvio = activosFiltrados.filter(p => p.desvio > 0 && p.desvio <= 30).length;
+  const criticos  = activosFiltrados.filter(p => p.desvio > 30).length;
+
+  const filtered = useMemo(() => {
+    let base = filterEstado === 'Entregados' ? entregados
+             : filterEstado === 'Stand by'   ? projects.filter(p => p.estado === 'Stand by')
+             : filterEstado === 'Críticos'   ? activos.filter(p => p.desvio > 30)
+             : activos;
+    if (clienteSel !== 'Todos') base = base.filter(p => p.cliente === clienteSel);
+    if (search) {
+      const q = search.toLowerCase();
+      base = base.filter(p =>
+        p.id.toLowerCase().includes(q) ||
+        (p.desc || '').toLowerCase().includes(q) ||
+        (p.cliente || '').toLowerCase().includes(q) ||
+        (p.ldp || '').toLowerCase().includes(q)
+      );
+    }
+    return base;
+  }, [projects, activos, entregados, filterEstado, clienteSel, search]);
+
+  const ldpGroups = useMemo(() => {
+    if (isEntregados) return [];
+    const map = {};
+    filtered.forEach(p => {
+      const ldp = p.ldp || 'Sin asignar';
+      if (!map[ldp]) map[ldp] = [];
+      map[ldp].push(p);
+    });
+    return Object.entries(map).sort(([, a], [, b]) => {
+      const cA = a.filter(p => p.desvio > 30).length, cB = b.filter(p => p.desvio > 30).length;
+      if (cB !== cA) return cB - cA;
+      return b.filter(p => p.desvio > 0).length - a.filter(p => p.desvio > 0).length;
+    });
+  }, [filtered, isEntregados]);
 
   const deliveryGroups = useMemo(() => {
     if (!isEntregados) return null;
-    const byYearMonth = {};
+    const byYM = {};
     filtered.forEach(p => {
-      const date = p.finEst || p.finPlan || '';
-      const parts = date.split('-');
-      const year = parts[0];
-      const monthIdx = parts[1] ? parseInt(parts[1], 10) - 1 : null;
+      const parts = (p.finEst || p.finPlan || '').split('-');
+      const year = parts[0], monthIdx = parts[1] ? parseInt(parts[1], 10) - 1 : null;
       if (!year || monthIdx === null) return;
-      if (!byYearMonth[year]) byYearMonth[year] = {};
-      const monthKey = parts[1];
-      if (!byYearMonth[year][monthKey]) byYearMonth[year][monthKey] = { idx: monthIdx, items: [] };
-      byYearMonth[year][monthKey].items.push(p);
+      if (!byYM[year]) byYM[year] = {};
+      const mk = parts[1];
+      if (!byYM[year][mk]) byYM[year][mk] = { idx: monthIdx, items: [] };
+      byYM[year][mk].items.push(p);
     });
-    return Object.entries(byYearMonth)
+    return Object.entries(byYM)
       .sort((a, b) => b[0] - a[0])
       .map(([year, months]) => ({
         year,
@@ -192,9 +198,47 @@ export function ProyectosPage({ projects, onOpenDetail }) {
       }));
   }, [filtered, isEntregados]);
 
+  function clientStats(c) {
+    const proys = c === 'Todos' ? activos : activos.filter(p => p.cliente === c);
+    return { count: proys.length, hasCritical: proys.some(p => p.desvio > 30) };
+  }
+
   return (
     <div className="page-body">
-      <div className="toolbar">
+
+      {/* ── KPI cards ─────────────────────────────────── */}
+      <div className="kpi-grid">
+        <div className="kpi-cell">
+          <span className="kpi-label">Activos</span>
+          <span className="kpi-value">{activosFiltrados.length}</span>
+          <span className="kpi-trend">{clienteSel === 'Todos' ? 'En planta' : clienteSel}</span>
+        </div>
+        <div className="kpi-cell">
+          <span className="kpi-label">En tiempo</span>
+          <span className="kpi-value ok">{enTiempo}</span>
+          <span className="kpi-trend">
+            {activosFiltrados.length > 0 ? Math.round(enTiempo / activosFiltrados.length * 100) : 0}% del activo
+          </span>
+        </div>
+        <div className="kpi-cell">
+          <span className="kpi-label">Con desvío</span>
+          <span className="kpi-value warn">{conDesvio}</span>
+          <span className="kpi-trend">≤ 30 días</span>
+        </div>
+        <div className="kpi-cell">
+          <span className="kpi-label">Críticos</span>
+          <span className="kpi-value bad">{criticos}</span>
+          <span className="kpi-trend">&gt; 30 días</span>
+        </div>
+        <div className="kpi-cell">
+          <span className="kpi-label">Entregados</span>
+          <span className="kpi-value">{entregadosFiltrados.length}</span>
+          <span className="kpi-trend">{clienteSel === 'Todos' ? 'total histórico' : clienteSel}</span>
+        </div>
+      </div>
+
+      {/* ── Toolbar ───────────────────────────────────── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         <div className="search">
           <SearchIcon />
           <input
@@ -203,6 +247,39 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+
+        <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
+
+        {clientes.map(c => {
+          const { count, hasCritical } = clientStats(c);
+          const isActive = clienteSel === c;
+          return (
+            <button
+              key={c}
+              className={`filter-btn${isActive ? ' active' : ''}`}
+              onClick={() => setClienteSel(c)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              {c}
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                background: isActive ? 'rgba(255,255,255,0.18)' : 'var(--surface-2)',
+                color: isActive ? '#fff' : 'var(--ink-3)',
+                padding: '1px 5px', borderRadius: 3,
+              }}>{count}</span>
+              {hasCritical && (
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: isActive ? 'oklch(0.72 0.18 25)' : 'var(--bad)',
+                  display: 'inline-block', flexShrink: 0,
+                }} />
+              )}
+            </button>
+          );
+        })}
+
+        <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
+
         {FILTERS.map(f => (
           <button
             key={f}
@@ -212,173 +289,66 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             {f}
           </button>
         ))}
-        {!isEntregados && (
-          <>
-            <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Agrupar
-            </span>
-            {GROUP_OPTIONS.map(([k, l]) => (
-              <button
-                key={k}
-                className={`filter-btn ${groupBy === k ? 'active' : ''}`}
-                onClick={() => setGroupBy(k)}
-              >
-                {l}
-              </button>
-            ))}
-          </>
-        )}
-        <div className="view-toggle">
-          <button className={view === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>
-            <GridIcon /> Grilla
-          </button>
-          <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>
-            <ListIcon /> Lista
-          </button>
-        </div>
       </div>
 
-      {isEntregados && deliveryGroups && deliveryGroups.map(({ year, months }) => {
-        const yearOpen = expanded.has(year);
-        const yearTotal = months.reduce((a, m) => a + m.items.length, 0);
-        return (
-          <div className="year-group" key={year}>
-            <button className="year-header" onClick={() => toggleExpanded(year)}>
-              <ChevDownIcon open={yearOpen} />
-              <span className="year-label">{year}</span>
-              <span className="year-count mono">{yearTotal} {yearTotal === 1 ? 'proyecto' : 'proyectos'}</span>
-            </button>
+      {/* ── Project table ─────────────────────────────── */}
+      <div className="card">
+        <div className="meet-row meet-head">
+          <span /><span>ID</span><span>Proyecto</span><span>Estado</span>
+          <span>Entrega est.</span><span>Desvío</span><span />
+        </div>
 
-            {yearOpen && months.map(({ key, idx, items }) => {
-              const monthKey = `${year}-${key}`;
-              const monthOpen = expanded.has(monthKey);
-              return (
-                <div className="month-group" key={key}>
-                  <button className="month-header" onClick={() => toggleExpanded(monthKey)}>
-                    <ChevDownIcon open={monthOpen} />
-                    <span className="month-label">{MESES[idx]}</span>
-                    <span className="month-count mono">{items.length} {items.length === 1 ? 'proyecto' : 'proyectos'}</span>
-                  </button>
-
-                  {monthOpen && (
-                    view === 'grid' ? (
-                      <div className="proj-grid">
-                        {items.map(p => (
-                          <ProjectCard key={p.id} p={p} onClick={() => onOpenDetail(p.id)} />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="proj-table">
-                        <div className="proj-row head">
-                          <span>ID</span><span>Descripción</span><span>Cliente</span><span>LDP</span>
-                          <span>Avance</span><span style={{ textAlign: 'right' }}>Desvío</span><span>Estadío</span><span />
-                        </div>
-                        {items.map(p => {
-                          const pr = projProgress(p);
-                          return (
-                            <div className="proj-row" key={p.id} onClick={() => onOpenDetail(p.id)}>
-                              <span className="p-id mono">{p.id}</span>
-                              <span className="p-desc">
-                                {p.desc}
-                                <small>Inicio {p.inicio} · Entrega {p.finEst}</small>
-                              </span>
-                              <span className="p-cli">{p.cliente}</span>
-                              <span className="p-ldp">{p.ldp}</span>
-                              <div className="p-progress">
-                                <div className="p-bar"><div className="p-fill" style={{ width: `${pr}%` }} /></div>
-                                <span className="p-pct">{pr}%</span>
-                              </div>
-                              <span className={`p-desv ${desvioKind(p.desvio)}`}>
-                                {p.desvio === 0 ? '—' : `+${p.desvio}d`}
-                              </span>
-                              <span><span className="chip mono">{p.estado}</span></span>
-                              <span className="chev"><ChevIcon /></span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-
-      {!isEntregados && grouped && grouped.map(([key, items]) => {
-        const totalHHReal = items.reduce((a, p) => a + Object.values(p.hhReal || {}).reduce((x, y) => x + y, 0), 0);
-        const totalHHPlan = items.reduce((a, p) => a + Object.values(p.hhPlan || {}).reduce((x, y) => x + y, 0), 0);
-        const atrasados = items.filter(p => p.desvio > 0).length;
-        const groupOpen = groupBy === 'none' || expanded.has(key);
-
-        return (
-          <div className="client-group" key={key}>
-            {groupBy !== 'none' && (
-              <button className="client-h" onClick={() => toggleExpanded(key)}>
-                <ChevDownIcon open={groupOpen} />
-                <span className="c-name">{key}</span>
-                <span className="c-count mono">{items.length} proy.</span>
-                <div className="client-h-meta">
-                  <span>HH <b className="mono">{totalHHReal.toLocaleString()}</b>/{totalHHPlan.toLocaleString()}</span>
-                  <span>Atrasados <b className="mono">{atrasados}</b></span>
-                </div>
+        {isEntregados && deliveryGroups && deliveryGroups.map(({ year, months }) => {
+          const yearOpen  = expanded.has(year);
+          const yearTotal = months.reduce((a, m) => a + m.items.length, 0);
+          return (
+            <div key={year} style={{ borderBottom: '1px solid var(--line)' }}>
+              <button className="year-header" onClick={() => toggleExpanded(year)}>
+                <ChevDownIcon open={yearOpen} />
+                <span className="year-label">{year}</span>
+                <span className="year-count mono">{yearTotal} {yearTotal === 1 ? 'proyecto' : 'proyectos'}</span>
               </button>
-            )}
+              {yearOpen && months.map(({ key, idx, items }) => {
+                const monthKey  = `${year}-${key}`;
+                const monthOpen = expanded.has(monthKey);
+                return (
+                  <div key={key} style={{ marginLeft: 12 }}>
+                    <button className="month-header" onClick={() => toggleExpanded(monthKey)}>
+                      <ChevDownIcon open={monthOpen} />
+                      <span className="month-label">{MESES[idx]}</span>
+                      <span className="month-count mono">{items.length} {items.length === 1 ? 'proyecto' : 'proyectos'}</span>
+                    </button>
+                    {monthOpen && items.map(p => <ProjectRow key={p.id} p={p} onOpenDetail={onOpenDetail} />)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
 
-            {groupOpen && (view === 'grid' ? (
-              <div className="proj-grid">
-                {items.map(p => (
-                  <ProjectCard key={p.id} p={p} onClick={() => onOpenDetail(p.id)} />
-                ))}
-                {items.length === 0 && (
-                  <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)', gridColumn: '1/-1' }}>Sin resultados.</div>
-                )}
-              </div>
-            ) : (
-              <div className="proj-table">
-                <div className="proj-row head">
-                  <span>ID</span>
-                  <span>Descripción</span>
-                  <span>Cliente</span>
-                  <span>LDP</span>
-                  <span>Avance</span>
-                  <span style={{ textAlign: 'right' }}>Desvío</span>
-                  <span>Estadío</span>
-                  <span />
-                </div>
-                {items.map(p => {
-                  const pr = projProgress(p);
-                  return (
-                    <div className="proj-row" key={p.id} onClick={() => onOpenDetail(p.id)}>
-                      <span className="p-id mono">{p.id}</span>
-                      <span className="p-desc">
-                        {p.desc}
-                        <small>Inicio {p.inicio} · Entrega {p.finEst}</small>
-                      </span>
-                      <span className="p-cli">{p.cliente}</span>
-                      <span className="p-ldp">{p.ldp}</span>
-                      <div className="p-progress">
-                        <div className="p-bar"><div className="p-fill" style={{ width: `${pr}%` }} /></div>
-                        <span className="p-pct">{pr}%</span>
-                      </div>
-                      <span className={`p-desv ${desvioKind(p.desvio)}`}>
-                        {p.desvio === 0 ? '—' : `+${p.desvio}d`}
-                      </span>
-                      <span><span className="chip mono">{p.estado}</span></span>
-                      <span className="chev"><ChevIcon /></span>
-                    </div>
-                  );
-                })}
-                {items.length === 0 && (
-                  <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)' }}>Sin resultados.</div>
-                )}
-              </div>
-            ))}
+        {isEntregados && deliveryGroups?.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-3)' }}>Sin proyectos entregados.</div>
+        )}
+
+        {!isEntregados && ldpGroups.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-3)' }}>
+            Sin proyectos{clienteSel !== 'Todos' ? ` para ${clienteSel}` : ''}.
           </div>
-        );
-      })}
+        )}
+
+        {!isEntregados && ldpGroups.map(([ldp, proys], i) => (
+          <LdpGroup
+            key={ldp}
+            ldp={ldp}
+            projects={proys}
+            onOpenDetail={onOpenDetail}
+            isLast={i === ldpGroups.length - 1}
+            isOpen={expanded.has(ldp)}
+            onToggle={() => toggleExpanded(ldp)}
+          />
+        ))}
+      </div>
+
     </div>
   );
 }
