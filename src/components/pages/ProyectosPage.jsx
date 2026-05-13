@@ -2,8 +2,8 @@ import { useState, useMemo } from 'react';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const ESTADOS_ENTREGADO = new Set(['Entregado', 'Entregado a NQN', 'Entregado parcialmente']);
-const ESTADOS_EN_PROCESO = new Set(['En proceso', 'Corte y plegado', 'Ingeniería', 'Inoxidable', 'Metalurgia', 'Metalurgia tigre', 'Montaje', 'Pintura', 'Próximo a entregar', 'Testeo']);
-const ESTADOS_EXCLUIDOS  = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
+const ESTADOS_TERMINALES = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
+const ESTADOS_EXCLUIDOS  = ESTADOS_TERMINALES;
 const FILTERS = ['Todos', 'En proceso', 'Stand by', 'Sin empezar', 'Entregado', 'Entregado parcialmente', 'Entregado a NQN', 'Cancelado'];
 
 function desvioColor(d) {
@@ -192,8 +192,8 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const criticos  = activosFiltrados.filter(p => p.desvio > 30).length;
 
   const filtered = useMemo(() => {
-    let base = filterEstado === 'Todos'        ? projects
-             : filterEstado === 'En proceso'   ? projects.filter(p => ESTADOS_EN_PROCESO.has(p.estado) || ESTADOS_EN_PROCESO.has(p.estadio))
+    let base = filterEstado === 'Todos'       ? projects
+             : filterEstado === 'En proceso'  ? projects.filter(p => !ESTADOS_TERMINALES.has(p.estado))
              : projects.filter(p => p.estado === filterEstado);
     if (clienteSel !== 'Todos') base = base.filter(p => p.cliente === clienteSel);
     if (search) {
