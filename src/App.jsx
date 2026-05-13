@@ -149,6 +149,7 @@ export default function App() {
   const [xlsxSource, setXlsxSource] = useState('none');
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
+  const [capacidadData, setCapacidadData] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [showPlanningImport, setShowPlanningImport] = useState(false);
   const [planningMap, setPlanningMap] = useState(new Map());
@@ -165,7 +166,9 @@ export default function App() {
     if (!isAuthenticated) return;
     setLoadingXlsx(true);
     setXlsxError(null);
-    fetchCapacidad().catch(err => console.warn('[Capacidad] Error:', err.message));
+    fetchCapacidad()
+      .then(data => { if (data) setCapacidadData(data); })
+      .catch(err => console.warn('[Capacidad] Error:', err.message));
 
     Promise.all([
       fetchProjects(),
@@ -491,7 +494,7 @@ export default function App() {
               </div>
             </div>
 
-            {page === 'kpi' && <KpiPage projects={mergedProjects} onOpenDetail={openDetail} />}
+            {page === 'kpi' && <KpiPage projects={mergedProjects} onOpenDetail={openDetail} capacidadData={capacidadData} />}
             {page === 'proyectos' && <ProyectosPage projects={mergedProjects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
             {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}

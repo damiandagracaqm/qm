@@ -303,6 +303,62 @@ export async function fetchPlanning() {
   return parsePlanningRows(range.values);
 }
 
+function parseCapacidadData(rows) {
+  if (!rows || rows.length < 10) return null;
+
+  // ── Tabla LDPs (filas 10-15) ─────────────────────────────
+  const ldps = [];
+  for (let i = 10; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row[0] || typeof row[0] !== 'string' || row[0].trim() === '') break;
+    ldps.push({
+      nombre:       String(row[0]).trim(),
+      capacidadMax: Number(row[2]) || 1,
+      cargaActual:  Number(row[3]) || 0,
+      pctCapacidad: Number(row[4]) || 0,
+    });
+  }
+
+  // Mapa apellido → LDP (el header semanal usa solo apellidos)
+  const ldpByApellido = {};
+  ldps.forEach(ldp => {
+    const apellido = ldp.nombre.split(' ').pop();
+    ldpByApellido[apellido] = ldp;
+  });
+
+  // ── Proyección semanal ───────────────────────────────────
+  const weeklyHeaderRow = rows.find(r => r[0] === 'Semana');
+  if (!weeklyHeaderRow) return { ldps, weeks: [] };
+
+  const colNames    = weeklyHeaderRow.slice(1);
+  const headerIdx   = rows.indexOf(weeklyHeaderRow);
+  const weeks = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (typeof row[0] !== 'number' || row[0] < 40000) break;
+    const date = new Date((row[0] - 25569) * 86400 * 1000);
+    const entry = {
+      dateStr: date.toISOString().split('T')[0],
+      label:   date.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }).replace('.',''),
+      ldpLoads: {},
+    };
+    colNames.forEach((name, idx) => {
+      if (!name || name === 'TOTAL' || name === 'Sin asignar') return;
+      const ldp  = ldpByApellido[name];
+      if (!ldp) return;
+      const load = Number(row[idx + 1]) || 0;
+      entry.ldpLoads[ldp.nombre] = {
+        load,
+        pct: ldp.capacidadMax > 0 ? load / ldp.capacidadMax : 0,
+      };
+    });
+    weeks.push(entry);
+  }
+
+  return { ldps, weeks };
+}
+
 export async function fetchCapacidad() {
   const { driveId, itemId } = await resolveDriveItem();
 
@@ -323,18 +379,7 @@ export async function fetchCapacidad() {
   const range = await graphGet(
     `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet.name)}')/usedRange`
   );
-  console.log('[Capacidad] Todas las filas:\n' + range.values?.map((r, i) => `  [${i}] ${JSON.stringify(r)}`).join('\n'));
-
-  // También leer hoja "Carga LDP"
-  const cargaSheet = sheets?.find(s => norm(s.name).includes('carga') && norm(s.name).includes('ldp'));
-  if (cargaSheet) {
-    const cargaRange = await graphGet(
-      `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(cargaSheet.name)}')/usedRange`
-    );
-    console.log('[Carga LDP] Primeras 10 filas:\n' + cargaRange.values?.slice(0, 10).map((r, i) => `  [${i}] ${JSON.stringify(r)}`).join('\n'));
-  }
-
-  return range.values;
+  return parseCapacidadData(range.values);
 }
 
 export async function addProject({ id, desc, ldp, finEst }) {
