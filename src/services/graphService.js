@@ -303,6 +303,30 @@ export async function fetchPlanning() {
   return parsePlanningRows(range.values);
 }
 
+export async function fetchCapacidad() {
+  const { driveId, itemId } = await resolveDriveItem();
+
+  const { value: sheets } = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=id,name`
+  );
+  console.log('[Capacidad] Hojas disponibles:', sheets.map(s => s.name));
+
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const sheet = sheets?.find(s => norm(s.name).includes('proyecci') && norm(s.name).includes('capacidad'))
+             ?? sheets?.find(s => norm(s.name).includes('capacidad'));
+
+  if (!sheet) {
+    throw new Error(`Hoja no encontrada. Hojas disponibles: ${sheets.map(s => s.name).join(', ')}`);
+  }
+  console.log('[Capacidad] Usando hoja:', sheet.name);
+
+  const range = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet.name)}')/usedRange`
+  );
+  console.log('[Capacidad] Primeras 5 filas:', range.values?.slice(0, 5));
+  return range.values;
+}
+
 export async function addProject({ id, desc, ldp, finEst }) {
   const { driveId, itemId } = await resolveDriveItem();
 

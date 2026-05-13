@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
-import { fetchProjects, fetchPlanning, updateBudgetPct } from './services/graphService';
+import { fetchProjects, fetchPlanning, fetchCapacidad, updateBudgetPct } from './services/graphService';
 import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
@@ -165,6 +165,8 @@ export default function App() {
     if (!isAuthenticated) return;
     setLoadingXlsx(true);
     setXlsxError(null);
+    fetchCapacidad().catch(err => console.warn('[Capacidad] Error:', err.message));
+
     Promise.all([
       fetchProjects(),
       fetchPlanning().catch(err => {
