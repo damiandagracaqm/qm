@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const ESTADOS_ENTREGADO = new Set(['Entregado', 'Entregado a NQN', 'Entregado parcialmente']);
-const ESTADOS_EXCLUIDOS = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
+const ESTADOS_EN_PROCESO = new Set(['En proceso', 'Corte y plegado', 'Ingeniería', 'Inoxidable', 'Metalurgia', 'Metalurgia tigre', 'Montaje', 'Pintura', 'Próximo a entregar', 'Testeo']);
+const ESTADOS_EXCLUIDOS  = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
+const FILTERS = ['Todos', 'En proceso', 'Stand by', 'Sin empezar', 'Entregado', 'Entregado parcialmente', 'Entregado a NQN', 'Cancelado'];
 
 function desvioColor(d) {
   if (d == null) return 'var(--ink-3)';
@@ -167,12 +169,6 @@ export function ProyectosPage({ projects, onOpenDetail }) {
 
   const isEntregados = ESTADOS_ENTREGADO.has(filterEstado);
 
-  // Dynamic estado list from all projects
-  const estadoOptions = useMemo(() => {
-    const set = new Set(projects.map(p => p.estado).filter(Boolean));
-    return ['Todos', ...Array.from(set).sort()];
-  }, [projects]);
-
   const activos    = useMemo(() => projects.filter(p => !ESTADOS_EXCLUIDOS.has(p.estado)), [projects]);
   const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.has(p.estado)), [projects]);
 
@@ -196,9 +192,9 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const criticos  = activosFiltrados.filter(p => p.desvio > 30).length;
 
   const filtered = useMemo(() => {
-    let base = filterEstado === 'Todos'
-      ? projects
-      : projects.filter(p => p.estado === filterEstado);
+    let base = filterEstado === 'Todos'        ? projects
+             : filterEstado === 'En proceso'   ? projects.filter(p => ESTADOS_EN_PROCESO.has(p.estado) || ESTADOS_EN_PROCESO.has(p.estadio))
+             : projects.filter(p => p.estado === filterEstado);
     if (clienteSel !== 'Todos') base = base.filter(p => p.cliente === clienteSel);
     if (search) {
       const q = search.toLowerCase();
@@ -339,13 +335,13 @@ export function ProyectosPage({ projects, onOpenDetail }) {
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 2 }}>
           Estado
         </span>
-        {estadoOptions.map(e => (
+        {FILTERS.map(f => (
           <button
-            key={e}
-            className={`filter-btn${filterEstado === e ? ' active' : ''}`}
-            onClick={() => setFilterEstado(e)}
+            key={f}
+            className={`filter-btn${filterEstado === f ? ' active' : ''}`}
+            onClick={() => setFilterEstado(f)}
           >
-            {e}
+            {f}
           </button>
         ))}
       </div>
