@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const ESTADOS_ENTREGADO = new Set(['Entregado', 'Entregado a NQN', 'Entregado parcialmente']);
 const ESTADOS_EXCLUIDOS = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
-const ESTADOS_ENTREGADO = ['Entregado', 'Entregado a NQN'];
-const FILTERS = ['Todos', 'Críticos', 'Entregados', 'Stand by'];
 
 function desvioColor(d) {
   if (d == null) return 'var(--ink-3)';
@@ -85,7 +84,7 @@ function LdpGroup({ ldp, projects, onOpenDetail, isLast, isOpen, onToggle }) {
   const sorted    = [...projects].sort((a, b) => (b.desvio ?? 0) - (a.desvio ?? 0));
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--line)' }}>
-      <div className="ldp-h" style={{ cursor: 'pointer' }} onClick={onToggle}>
+      <div className="ldp-h" style={{ cursor: 'pointer', paddingLeft: 32 }} onClick={onToggle}>
         <ChevDownIcon open={isOpen} />
         <span className="ldp-name">{ldp}</span>
         <span className="ldp-count">{projects.length} proy.</span>
@@ -105,11 +104,58 @@ function LdpGroup({ ldp, projects, onOpenDetail, isLast, isOpen, onToggle }) {
   );
 }
 
+function ClienteGroup({ cliente, ldpMap, onOpenDetail, isLast, expanded, onToggle }) {
+  const allProys  = Object.values(ldpMap).flat();
+  const criticals = allProys.filter(p => p.desvio > 30).length;
+  const warns     = allProys.filter(p => p.desvio > 0 && p.desvio <= 30).length;
+  const isOpen    = expanded.has(`cli:${cliente}`);
+  const ldpEntries = Object.entries(ldpMap).sort(([, a], [, b]) => {
+    const cA = a.filter(p => p.desvio > 30).length, cB = b.filter(p => p.desvio > 30).length;
+    if (cB !== cA) return cB - cA;
+    return b.filter(p => p.desvio > 0).length - a.filter(p => p.desvio > 0).length;
+  });
+
+  return (
+    <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--line-2)' }}>
+      <div
+        className="client-h"
+        style={{ cursor: 'pointer', borderRadius: 0, border: 'none', borderBottom: '1px solid var(--line)', marginBottom: 0 }}
+        onClick={() => onToggle(`cli:${cliente}`)}
+      >
+        <ChevDownIcon open={isOpen} />
+        <span className="c-name">{cliente}</span>
+        <span className="c-count mono">{allProys.length} proy.</span>
+        {criticals > 0 && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--bad)', background: 'var(--bad-soft)', padding: '1px 6px', borderRadius: 3 }}>
+            {criticals} crítico{criticals > 1 ? 's' : ''}
+          </span>
+        )}
+        {warns > 0 && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'oklch(0.5 0.13 75)', background: 'var(--warn-soft)', padding: '1px 6px', borderRadius: 3 }}>
+            {warns} con desvío
+          </span>
+        )}
+      </div>
+      {isOpen && ldpEntries.map(([ldp, proys], i) => (
+        <LdpGroup
+          key={ldp}
+          ldp={ldp}
+          projects={proys}
+          onOpenDetail={onOpenDetail}
+          isLast={i === ldpEntries.length - 1}
+          isOpen={expanded.has(`ldp:${cliente}:${ldp}`)}
+          onToggle={() => onToggle(`ldp:${cliente}:${ldp}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function ProyectosPage({ projects, onOpenDetail }) {
-  const [search, setSearch]           = useState('');
+  const [search, setSearch]             = useState('');
   const [filterEstado, setFilterEstado] = useState('Todos');
-  const [clienteSel, setClienteSel]   = useState('Todos');
-  const [expanded, setExpanded]       = useState(new Set());
+  const [clienteSel, setClienteSel]     = useState('Todos');
+  const [expanded, setExpanded]         = useState(new Set());
 
   function toggleExpanded(key) {
     setExpanded(prev => {
@@ -119,10 +165,16 @@ export function ProyectosPage({ projects, onOpenDetail }) {
     });
   }
 
-  const isEntregados = filterEstado === 'Entregados';
+  const isEntregados = ESTADOS_ENTREGADO.has(filterEstado);
+
+  // Dynamic estado list from all projects
+  const estadoOptions = useMemo(() => {
+    const set = new Set(projects.map(p => p.estado).filter(Boolean));
+    return ['Todos', ...Array.from(set).sort()];
+  }, [projects]);
 
   const activos    = useMemo(() => projects.filter(p => !ESTADOS_EXCLUIDOS.has(p.estado)), [projects]);
-  const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.includes(p.estado)), [projects]);
+  const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.has(p.estado)), [projects]);
 
   const clientes = useMemo(() => {
     const set = new Set(activos.map(p => p.cliente).filter(Boolean));
@@ -144,10 +196,9 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const criticos  = activosFiltrados.filter(p => p.desvio > 30).length;
 
   const filtered = useMemo(() => {
-    let base = filterEstado === 'Entregados' ? entregados
-             : filterEstado === 'Stand by'   ? projects.filter(p => p.estado === 'Stand by')
-             : filterEstado === 'Críticos'   ? activos.filter(p => p.desvio > 30)
-             : activos;
+    let base = filterEstado === 'Todos'
+      ? projects
+      : projects.filter(p => p.estado === filterEstado);
     if (clienteSel !== 'Todos') base = base.filter(p => p.cliente === clienteSel);
     if (search) {
       const q = search.toLowerCase();
@@ -159,23 +210,29 @@ export function ProyectosPage({ projects, onOpenDetail }) {
       );
     }
     return base;
-  }, [projects, activos, entregados, filterEstado, clienteSel, search]);
+  }, [projects, filterEstado, clienteSel, search]);
 
-  const ldpGroups = useMemo(() => {
+  // Cliente → LDP grouping
+  const clienteGroups = useMemo(() => {
     if (isEntregados) return [];
     const map = {};
     filtered.forEach(p => {
+      const cli = p.cliente || 'Sin cliente';
       const ldp = p.ldp || 'Sin asignar';
-      if (!map[ldp]) map[ldp] = [];
-      map[ldp].push(p);
+      if (!map[cli]) map[cli] = {};
+      if (!map[cli][ldp]) map[cli][ldp] = [];
+      map[cli][ldp].push(p);
     });
-    return Object.entries(map).sort(([, a], [, b]) => {
-      const cA = a.filter(p => p.desvio > 30).length, cB = b.filter(p => p.desvio > 30).length;
+    return Object.entries(map).sort(([, aLdps], [, bLdps]) => {
+      const aAll = Object.values(aLdps).flat();
+      const bAll = Object.values(bLdps).flat();
+      const cA = aAll.filter(p => p.desvio > 30).length, cB = bAll.filter(p => p.desvio > 30).length;
       if (cB !== cA) return cB - cA;
-      return b.filter(p => p.desvio > 0).length - a.filter(p => p.desvio > 0).length;
+      return bAll.filter(p => p.desvio > 0).length - aAll.filter(p => p.desvio > 0).length;
     });
   }, [filtered, isEntregados]);
 
+  // Year/month grouping for Entregados
   const deliveryGroups = useMemo(() => {
     if (!isEntregados) return null;
     const byYM = {};
@@ -237,7 +294,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
         </div>
       </div>
 
-      {/* ── Toolbar ───────────────────────────────────── */}
+      {/* ── Toolbar fila 1: búsqueda + clientes ───────── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         <div className="search">
           <SearchIcon />
@@ -247,9 +304,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-
         <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
-
         {clientes.map(c => {
           const { count, hasCritical } = clientStats(c);
           const isActive = clienteSel === c;
@@ -277,39 +332,44 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             </button>
           );
         })}
+      </div>
 
-        <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
-
-        {FILTERS.map(f => (
+      {/* ── Toolbar fila 2: filtro por Estado ─────────── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 2 }}>
+          Estado
+        </span>
+        {estadoOptions.map(e => (
           <button
-            key={f}
-            className={`filter-btn ${filterEstado === f ? 'active' : ''}`}
-            onClick={() => setFilterEstado(f)}
+            key={e}
+            className={`filter-btn${filterEstado === e ? ' active' : ''}`}
+            onClick={() => setFilterEstado(e)}
           >
-            {f}
+            {e}
           </button>
         ))}
       </div>
 
-      {/* ── Project table ─────────────────────────────── */}
+      {/* ── Tabla de proyectos ────────────────────────── */}
       <div className="card">
         <div className="meet-row meet-head">
           <span /><span>ID</span><span>Proyecto</span><span>Estado</span>
           <span>Entrega est.</span><span>Desvío</span><span />
         </div>
 
+        {/* Vista entregados: año / mes */}
         {isEntregados && deliveryGroups && deliveryGroups.map(({ year, months }) => {
-          const yearOpen  = expanded.has(year);
+          const yearOpen  = expanded.has(`year:${year}`);
           const yearTotal = months.reduce((a, m) => a + m.items.length, 0);
           return (
             <div key={year} style={{ borderBottom: '1px solid var(--line)' }}>
-              <button className="year-header" onClick={() => toggleExpanded(year)}>
+              <button className="year-header" onClick={() => toggleExpanded(`year:${year}`)}>
                 <ChevDownIcon open={yearOpen} />
                 <span className="year-label">{year}</span>
                 <span className="year-count mono">{yearTotal} {yearTotal === 1 ? 'proyecto' : 'proyectos'}</span>
               </button>
               {yearOpen && months.map(({ key, idx, items }) => {
-                const monthKey  = `${year}-${key}`;
+                const monthKey  = `month:${year}-${key}`;
                 const monthOpen = expanded.has(monthKey);
                 return (
                   <div key={key} style={{ marginLeft: 12 }}>
@@ -330,21 +390,20 @@ export function ProyectosPage({ projects, onOpenDetail }) {
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-3)' }}>Sin proyectos entregados.</div>
         )}
 
-        {!isEntregados && ldpGroups.length === 0 && (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-3)' }}>
-            Sin proyectos{clienteSel !== 'Todos' ? ` para ${clienteSel}` : ''}.
-          </div>
+        {/* Vista normal: cliente → LDP */}
+        {!isEntregados && clienteGroups.length === 0 && (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-3)' }}>Sin proyectos.</div>
         )}
 
-        {!isEntregados && ldpGroups.map(([ldp, proys], i) => (
-          <LdpGroup
-            key={ldp}
-            ldp={ldp}
-            projects={proys}
+        {!isEntregados && clienteGroups.map(([cliente, ldpMap], i) => (
+          <ClienteGroup
+            key={cliente}
+            cliente={cliente}
+            ldpMap={ldpMap}
             onOpenDetail={onOpenDetail}
-            isLast={i === ldpGroups.length - 1}
-            isOpen={expanded.has(ldp)}
-            onToggle={() => toggleExpanded(ldp)}
+            isLast={i === clienteGroups.length - 1}
+            expanded={expanded}
+            onToggle={toggleExpanded}
           />
         ))}
       </div>
