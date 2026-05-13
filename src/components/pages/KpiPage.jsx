@@ -165,9 +165,7 @@ export function KpiPage({ projects, capacidadData }) {
         <div className="card">
           <div className="card-h">
             <span className="card-title">Capacidad por LDP</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)' }}>
-              {capacidadData ? 'desde Excel' : 'conteo de proyectos'}
-            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)' }}>% capacidad</span>
           </div>
           <div className="card-b" style={{ padding: 0 }}>
             {ldpStats.map((s, i) => {
