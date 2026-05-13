@@ -323,7 +323,7 @@ export async function fetchCapacidad() {
   const range = await graphGet(
     `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet.name)}')/usedRange`
   );
-  console.log('[Capacidad] Primeras 10 filas:\n' + range.values?.slice(0, 10).map((r, i) => `  [${i}] ${JSON.stringify(r)}`).join('\n'));
+  console.log('[Capacidad] Todas las filas:\n' + range.values?.map((r, i) => `  [${i}] ${JSON.stringify(r)}`).join('\n'));
 
   // También leer hoja "Carga LDP"
   const cargaSheet = sheets?.find(s => norm(s.name).includes('carga') && norm(s.name).includes('ldp'));
