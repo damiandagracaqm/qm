@@ -154,7 +154,7 @@ export function KpiPage({ projects, capacidadData }) {
         </div>
         <div className="kpi-cell">
           <span className="kpi-label">HH consumidas</span>
-          <span className="kpi-value" style={{ fontSize: 28 }}>{totalHHReal.toLocaleString()}</span>
+          <span className="kpi-value" style={{ fontSize: 28 }}>{Math.round(totalHHReal).toLocaleString()}</span>
           <span className="kpi-trend">{totalHHPlan > 0 ? Math.round(totalHHReal / totalHHPlan * 100) : 0}% del plan</span>
         </div>
       </div>

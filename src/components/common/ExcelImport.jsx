@@ -73,6 +73,8 @@ function mapRowsToProjects(rows) {
   const idxRealMont  = col('reales montaje', 'reales mont');
   const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
   const idxFinReal   = col('entrega final');
+  const idxReplans   = col('reprogramaci');
+  const idxCausas    = col('causa');
 
   const projects = rows.slice(1)
     .map((row, i) => {
@@ -119,7 +121,19 @@ function mapRowsToProjects(rows) {
         },
         budget:  { total: 0, consumido: 0, materiales: 0, manoObra: 0 },
         gantt:   [],
-        replans: [],
+        replans: (() => {
+          const raw  = idxReplans !== -1 ? String(row[idxReplans] ?? '').trim() : '';
+          const craw = idxCausas  !== -1 ? String(row[idxCausas]  ?? '').trim() : '';
+          if (!raw || raw === '0' || raw === '00/01/1900') return [];
+          const dates  = raw.split(';').map(s => s.trim()).filter(Boolean);
+          const causes = craw.split(';').map(s => s.trim());
+          const orig   = parseExcelDate(idxFinEst !== -1 ? row[idxFinEst] : null);
+          return dates.map((d, i) => ({
+            desde: i === 0 ? orig : parseExcelDate(dates[i - 1]),
+            hasta: parseExcelDate(d),
+            causa: causes[i] ?? '',
+          }));
+        })(),
       };
     })
     .filter(Boolean);

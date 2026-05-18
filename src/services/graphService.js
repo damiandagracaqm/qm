@@ -3,6 +3,7 @@ import { msalInstance, loginRequest } from '../auth/msalConfig';
 const SHAREPOINT_URL = 'https://qmequipment123.sharepoint.com/:x:/r/sites/Produccin/Documentos%20compartidos/Proyectos/Proyectos%202.0.xlsx?d=wfe883325926f4ea98fc660906c6137c3&csf=1&web=1&e=wbxezq';
 const SHEET_NAME = 'Estado de proyectos';
 const PLANNING_SHEET = 'Planificacion mensual';
+const PLANNING_SITE = 'qmequipment123.sharepoint.com:/sites/Planificacion';
 
 function encodeSharingUrl(url) {
   return 'u!' + btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -23,52 +24,49 @@ async function resolveDriveItem() {
   return _driveItem;
 }
 
-// Busca el Excel de planificación en la misma carpeta que el principal (se cachea por sesión)
+// Resuelve el archivo de planificación desde el sitio Planificacion (se cachea por sesión)
 let _planningItem = null;
 async function resolvePlanningDriveItem() {
   if (_planningItem) return _planningItem;
-  const { driveId, parentId, parentPath } = await resolveDriveItem();
 
-  let files;
+  console.log('[Planning] Resolviendo desde sitio:', PLANNING_SITE);
+  const site = await graphGet(`/sites/${PLANNING_SITE}`);
+  console.log('[Planning] Site ID:', site.id);
 
-  // Estrategia 1: navegación por path (parentReference.path → "…/root:/Carpeta/Subcarpeta")
-  const afterRoot = parentPath.includes('root:') ? parentPath.split('root:')[1] : '';
-  if (afterRoot) {
-    try {
-      const encodedPath = afterRoot.split('/').map(s => s ? encodeURIComponent(s) : '').join('/');
-      const resp = await graphGet(`/drives/${driveId}/root:${encodedPath}:/children?$select=id,name`);
-      files = resp.value;
-    } catch (e) {
-      console.warn('[Planning] carpeta por path falló:', e.message);
-    }
+  const drive = await graphGet(`/sites/${site.id}/drive`);
+  console.log('[Planning] Drive ID:', drive.id);
+
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const isPlanningFile = f => norm(f.name).includes('planificaci') || f.name.includes('RC-17');
+
+  // Estrategia 1: búsqueda por nombre
+  let found = null;
+  try {
+    const res = await graphGet(
+      `/drives/${drive.id}/root/search(q='RC-17-01')?$select=id,name&$top=10`
+    );
+    console.log('[Planning] Búsqueda:', res.value?.map(f => f.name));
+    found = res.value?.find(isPlanningFile) ?? null;
+  } catch (e) {
+    console.warn('[Planning] Búsqueda falló:', e.message);
   }
 
-  // Estrategia 2: navegación por parentId
-  if (!files && parentId) {
-    try {
-      const resp = await graphGet(`/drives/${driveId}/items/${parentId}/children?$select=id,name`);
-      files = resp.value;
-    } catch (e) {
-      console.warn('[Planning] carpeta por parentId falló:', e.message);
-    }
+  // Estrategia 2: listar raíz del drive
+  if (!found) {
+    const root = await graphGet(`/drives/${drive.id}/root/children?$select=id,name&$top=100`);
+    console.log('[Planning] Raíz del drive:', root.value?.map(f => f.name));
+    found = root.value?.find(isPlanningFile) ?? null;
   }
-
-  if (!files?.length) {
-    throw new Error('No se pudo listar la carpeta Proyectos en SharePoint.');
-  }
-
-  const found = files.find(f => {
-    const n = f.name.toLowerCase();
-    return n.includes('planificacion') || n.includes('planificación');
-  });
 
   if (!found) {
     throw new Error(
-      `No se encontró el archivo de planificación. Archivos en la carpeta: ${files.map(f => f.name).join(', ')}`
+      `Archivo de planificación no encontrado en el sitio Planificacion. ` +
+      `Revisá la consola del navegador para ver los archivos disponibles.`
     );
   }
 
-  _planningItem = { driveId, itemId: found.id };
+  console.log('[Planning] Usando archivo:', found.name, '| ID:', found.id);
+  _planningItem = { driveId: drive.id, itemId: found.id };
   return _planningItem;
 }
 
@@ -176,6 +174,8 @@ function mapRowsToProjects(rows) {
   const idxRealMont  = col('reales montaje', 'reales mont');
   const idxBudgetPct = col('presupuesto consumido', 'kpi 3');
   const idxFinReal   = col('entrega final');
+  const idxReplans   = col('reprogramaci');
+  const idxCausas    = col('causa');
 
   const projects = rows.slice(1)
     .map((row, i) => {
@@ -219,7 +219,19 @@ function mapRowsToProjects(rows) {
         },
         budget:      { total: 0, consumido: 0, materiales: 0, manoObra: 0 },
         gantt:       [],
-        replans:     [],
+        replans: (() => {
+          const raw  = idxReplans !== -1 ? String(row[idxReplans] ?? '').trim() : '';
+          const craw = idxCausas  !== -1 ? String(row[idxCausas]  ?? '').trim() : '';
+          if (!raw || raw === '0' || raw === '00/01/1900') return [];
+          const dates  = raw.split(';').map(s => s.trim()).filter(Boolean);
+          const causes = craw.split(';').map(s => s.trim());
+          const orig   = parseExcelDate(idxFinEst !== -1 ? row[idxFinEst] : null);
+          return dates.map((d, i) => ({
+            desde: i === 0 ? orig : parseExcelDate(dates[i - 1]),
+            hasta: parseExcelDate(d),
+            causa: causes[i] ?? '',
+          }));
+        })(),
       };
     })
     .filter(Boolean);
@@ -244,8 +256,22 @@ function parseExcelDate(value) {
 
 function parsePlanningRows(rows) {
   if (!rows || rows.length < 2) return new Map();
-  const headers = rows[0].map(h => String(h ?? '').toLowerCase().trim());
-  console.log('[Planning] Headers encontrados:', rows[0]);
+
+  const norm = h => String(h ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  const HEADER_KEYS = ['serie', 'n°', 'nro', 'sector', 'taller', 'area', 'inicio', 'comienzo', 'fin', 'start', 'end'];
+
+  // Busca la fila que contiene los encabezados reales (puede no ser la primera)
+  let headerRowIdx = 0;
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    if (!rows[i]) continue;
+    const normalized = rows[i].map(norm);
+    const hits = HEADER_KEYS.filter(kw => normalized.some(h => h.includes(kw)));
+    if (hits.length >= 2) { headerRowIdx = i; break; }
+  }
+
+  const headers = rows[headerRowIdx].map(norm);
+  console.log('[Planning] Header row:', headerRowIdx, '| Headers:', rows[headerRowIdx]);
+
   const col = (...names) => {
     for (const name of names) {
       const idx = headers.findIndex(h => h.includes(name));
@@ -258,7 +284,7 @@ function parsePlanningRows(rows) {
   const idxStart  = col('comienzo', 'inicio', 'start');
   const idxEnd    = col('fin', 'end', 'término', 'termino');
   const map = new Map();
-  rows.slice(1).forEach(row => {
+  rows.slice(headerRowIdx + 1).forEach(row => {
     if (!row || row.every(c => c === null || c === undefined || c === '')) return;
     const id = idxId !== -1 ? String(row[idxId] ?? '').trim() : '';
     if (!id || id === '0') return;
