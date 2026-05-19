@@ -72,7 +72,7 @@ function ProjectRow({ p, onOpenDetail }) {
       <span style={{ fontSize: 12.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.desc}</span>
       <span className="chip mono" style={{ whiteSpace: 'nowrap', fontSize: 10.5, justifySelf: 'start' }}>{p.estado}</span>
       <span className="mono" style={{ fontSize: 11, color: p.desvio > 0 ? desvioColor(p.desvio) : 'var(--ink-2)', whiteSpace: 'nowrap' }}>
-        {p.finEst && p.finEst !== '—' ? p.finEst : '—'}
+        {p.finReal && p.finReal !== '—' ? p.finReal : p.finEst && p.finEst !== '—' ? p.finEst : '—'}
       </span>
       <DesvioTag desvio={p.desvio} />
       <span style={{ color: 'var(--ink-3)' }}><ChevIcon /></span>
@@ -234,7 +234,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
     const byYM = {};
     const sinFecha = [];
     filtered.forEach(p => {
-      const parts = (p.finEst || p.finPlan || '').split('-');
+      const parts = (p.finReal || p.finEst || p.finPlan || '').split('-');
       const year = parts[0], monthIdx = parts[1] ? parseInt(parts[1], 10) - 1 : null;
       if (!year || year === '—' || monthIdx === null) {
         sinFecha.push(p);
@@ -358,7 +358,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
       <div className="card">
         <div className="meet-row meet-head">
           <span /><span>ID</span><span>Proyecto</span><span>Estado</span>
-          <span>Entrega est.</span><span>Desvío</span><span />
+          <span>Entrega</span><span>Desvío</span><span />
         </div>
 
         {/* Vista entregados: año / mes */}
