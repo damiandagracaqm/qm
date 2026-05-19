@@ -232,16 +232,20 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const deliveryGroups = useMemo(() => {
     if (!isEntregados) return null;
     const byYM = {};
+    const sinFecha = [];
     filtered.forEach(p => {
       const parts = (p.finEst || p.finPlan || '').split('-');
       const year = parts[0], monthIdx = parts[1] ? parseInt(parts[1], 10) - 1 : null;
-      if (!year || monthIdx === null) return;
+      if (!year || year === '—' || monthIdx === null) {
+        sinFecha.push(p);
+        return;
+      }
       if (!byYM[year]) byYM[year] = {};
       const mk = parts[1];
       if (!byYM[year][mk]) byYM[year][mk] = { idx: monthIdx, items: [] };
       byYM[year][mk].items.push(p);
     });
-    return Object.entries(byYM)
+    const groups = Object.entries(byYM)
       .sort((a, b) => b[0] - a[0])
       .map(([year, months]) => ({
         year,
@@ -249,6 +253,10 @@ export function ProyectosPage({ projects, onOpenDetail }) {
           .sort((a, b) => b[0].localeCompare(a[0]))
           .map(([key, { idx, items }]) => ({ key, idx, items })),
       }));
+    if (sinFecha.length > 0) {
+      groups.push({ year: 'Sin fecha', months: [{ key: 'sf', idx: -1, items: sinFecha }] });
+    }
+    return groups;
   }, [filtered, isEntregados]);
 
   function clientStats(c) {
@@ -371,7 +379,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
                   <div key={key} style={{ marginLeft: 12 }}>
                     <button className="month-header" onClick={() => toggleExpanded(monthKey)}>
                       <ChevDownIcon open={monthOpen} />
-                      <span className="month-label">{MESES[idx]}</span>
+                      <span className="month-label">{idx === -1 ? 'Sin fecha de entrega' : MESES[idx]}</span>
                       <span className="month-count mono">{items.length} {items.length === 1 ? 'proyecto' : 'proyectos'}</span>
                     </button>
                     {monthOpen && items.map(p => <ProjectRow key={p.id} p={p} onOpenDetail={onOpenDetail} />)}
