@@ -7,6 +7,7 @@ import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
 import { AprobacionesPage } from './components/pages/AprobacionesPage';
 import { NuevoProyectoPage } from './components/pages/NuevoProyectoPage';
+import { RIPPage } from './components/pages/RIPPage';
 import { DetailView } from './components/detail/DetailView';
 import { ExcelImport, PlanningImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
 
@@ -127,6 +128,12 @@ const NavIcon = {
       <path d="M12 5v14M5 12h14"/>
     </svg>
   ),
+  rip: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+      <path d="M8 14h4M8 17h8"/>
+    </svg>
+  ),
 };
 
 const PAGE_LABELS = {
@@ -134,6 +141,7 @@ const PAGE_LABELS = {
   proyectos:   { eyebrow: 'CARTERA', title: 'Proyectos en planta' },
   aprobaciones:{ eyebrow: 'WORKFLOW', title: 'Aprobaciones · Change Requests' },
   nuevo:       { eyebrow: 'GESTIÓN', title: 'Nuevo proyecto' },
+  rip:         { eyebrow: 'REUNIÓN', title: 'RIP — Reunión de Inicio de Producción' },
   detail:      { eyebrow: 'PROYECTO', title: '' },
 };
 
@@ -332,6 +340,12 @@ export default function App() {
         >
           <NavIcon.plus /> Nuevo proyecto
         </button>
+        <button
+          className={`nav-item ${page === 'rip' ? 'active' : ''}`}
+          onClick={() => setPage('rip')}
+        >
+          <NavIcon.rip /> RIP
+        </button>
 
         <div className="nav-section">Fuentes</div>
         <div style={{ padding: '6px 10px', fontSize: 11, color: 'oklch(0.7 0.005 80)', lineHeight: 1.6 }}>
@@ -498,6 +512,7 @@ export default function App() {
             {page === 'proyectos' && <ProyectosPage projects={mergedProjects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
             {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}
+            {page === 'rip'   && <RIPPage projects={mergedProjects} />}
             {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} />}
           </>
         )}

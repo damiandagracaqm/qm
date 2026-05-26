@@ -89,6 +89,20 @@ async function graphGet(path) {
   return res.json();
 }
 
+async function graphPost(path, body) {
+  const token = await getToken();
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Graph error ${res.status}`);
+  }
+  return res.json();
+}
+
 async function graphPatch(path, body) {
   const token = await getToken();
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
@@ -429,6 +443,72 @@ export async function addProject({ id, desc, ldp, finEst }) {
   await graphPatch(
     `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(SHEET_NAME)}')/range(address='A${newRow}:I${newRow}')`,
     { values }
+  );
+}
+
+const RIP_SHEET = 'RIP';
+
+async function ensureRIPSheet(driveId, itemId) {
+  const { value: sheets } = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=id,name`
+  );
+  if (sheets?.some(s => s.name === RIP_SHEET)) return;
+  await graphPost(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets/add`,
+    { name: RIP_SHEET }
+  );
+  await graphPatch(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${RIP_SHEET}')/range(address='A1:E1')`,
+    { values: [['Fecha', 'Proyecto', 'Objetivo', 'Estado', 'Comentarios']] }
+  );
+}
+
+function parseRIPRows(rows) {
+  if (!rows || rows.length < 2) return [];
+  return rows.slice(1)
+    .map((row, i) => ({
+      fecha:       String(row[0] ?? '').trim(),
+      proyecto:    String(row[1] ?? '').trim(),
+      objetivo:    String(row[2] ?? '').trim(),
+      estado:      String(row[3] ?? '').trim() || 'Pendiente',
+      comentarios: String(row[4] ?? '').trim(),
+      _rowIdx:     i + 2,
+    }))
+    .filter(r => r.fecha && r.objetivo);
+}
+
+export async function fetchRIP() {
+  const { driveId, itemId } = await resolveDriveItem();
+  await ensureRIPSheet(driveId, itemId);
+  try {
+    const range = await graphGet(
+      `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/usedRange`
+    );
+    return parseRIPRows(range.values);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveRIPMeeting(entries) {
+  const { driveId, itemId } = await resolveDriveItem();
+  const range = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/usedRange`
+  );
+  const startRow = range.rowCount + 1;
+  const endRow   = startRow + entries.length - 1;
+  const values   = entries.map(e => [e.fecha, e.proyecto, e.objetivo, 'Pendiente', '']);
+  await graphPatch(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/range(address='A${startRow}:E${endRow}')`,
+    { values }
+  );
+}
+
+export async function updateRIPEntry(rowIdx, estado, comentarios) {
+  const { driveId, itemId } = await resolveDriveItem();
+  await graphPatch(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/range(address='D${rowIdx}:E${rowIdx}')`,
+    { values: [[estado, comentarios]] }
   );
 }
 
