@@ -78,6 +78,28 @@ export function RIPPage({ projects }) {
     p.estado && p.estado !== 'Entregado' && p.estado !== 'Cancelado'
   );
 
+  // --- filtros ---
+  const [filterCliente, setFilterCliente] = useState('');
+  const [filterLdp,     setFilterLdp]     = useState('');
+
+  const clientes = [...new Set(activeProjects.map(p => p.cliente).filter(Boolean))].sort();
+  const ldps     = [...new Set(activeProjects.map(p => p.ldp).filter(Boolean))].sort();
+
+  const filteredProjects = activeProjects.filter(p =>
+    (!filterCliente || p.cliente === filterCliente) &&
+    (!filterLdp     || p.ldp     === filterLdp)
+  );
+
+  // lookup para filtrar entradas por cliente/ldp
+  const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+  function entryMatchesFilter(e) {
+    if (e.proyecto === 'GENERAL') return true;
+    const p = projectMap[e.proyecto];
+    if (!p) return true;
+    return (!filterCliente || p.cliente === filterCliente) &&
+           (!filterLdp     || p.ldp     === filterLdp);
+  }
+
   // --- datos ---
   const [entries,   setEntries]   = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -115,12 +137,13 @@ export function RIPPage({ projects }) {
 
   useEffect(() => { loadEntries(); }, []);
 
-  // Datos derivados
-  const grouped          = groupByFecha(entries);
-  const thisWeekEntries  = entries.filter(e => e.fecha === thisMonday);
-  const lastWeekEntries  = entries.filter(e => e.fecha === lastMonday);
+  // Datos derivados (respetan filtros de cliente/ldp)
+  const filteredEntries  = entries.filter(entryMatchesFilter);
+  const grouped          = groupByFecha(filteredEntries);
+  const thisWeekEntries  = filteredEntries.filter(e => e.fecha === thisMonday);
+  const lastWeekEntries  = entries.filter(e => e.fecha === lastMonday && entryMatchesFilter(e));
   const pendingReview    = lastWeekEntries.filter(e => e.estado === 'Pendiente');
-  const hasThisWeek      = thisWeekEntries.length > 0;
+  const hasThisWeek      = entries.some(e => e.fecha === thisMonday);
 
   // Inicializa el estado de revisión cuando cambian los pendientes
   useEffect(() => {
@@ -230,6 +253,42 @@ export function RIPPage({ projects }) {
           </div>
         )}
 
+        {/* Filtros */}
+        {(clientes.length > 0 || ldps.length > 0) && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {clientes.length > 0 && (
+              <select
+                className="input"
+                value={filterCliente}
+                onChange={e => setFilterCliente(e.target.value)}
+                style={{ flex: '1 1 180px', fontSize: 12 }}
+              >
+                <option value="">Todos los clientes</option>
+                {clientes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            {ldps.length > 0 && (
+              <select
+                className="input"
+                value={filterLdp}
+                onChange={e => setFilterLdp(e.target.value)}
+                style={{ flex: '1 1 180px', fontSize: 12 }}
+              >
+                <option value="">Todos los LDP</option>
+                {ldps.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+            {(filterCliente || filterLdp) && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setFilterCliente(''); setFilterLdp(''); }}
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Revisión de semana anterior (solo lunes con pendientes) */}
         {isMonday && pendingReview.length > 0 && !reviewSaved && (
           <div className="card">
@@ -311,10 +370,10 @@ export function RIPPage({ projects }) {
             </div>
             <div className="card-b">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {activeProjects.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos activos.</div>
+                {filteredProjects.length === 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos que coincidan con los filtros.</div>
                 )}
-                {activeProjects.map(p => (
+                {filteredProjects.map(p => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap', minWidth: 68 }}>
                       {p.id}
