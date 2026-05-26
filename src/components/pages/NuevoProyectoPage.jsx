@@ -17,7 +17,12 @@ export function NuevoProyectoPage({ onCreated }) {
 
   function set(field, val) { setForm(f => ({ ...f, [field]: val })); }
 
-  const valid = form.id.trim() && form.desc.trim() && form.ldp.trim();
+  const SERIE_RE = /^(QM|ODS) \d{4}$/;
+  const serieError = form.id.trim() && !SERIE_RE.test(form.id.trim())
+    ? 'El formato debe ser "QM XXXX" u "ODS XXXX" con números (ej. QM 3001)'
+    : null;
+
+  const valid = form.id.trim() && !serieError && form.desc.trim() && form.ldp.trim();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -89,7 +94,11 @@ export function NuevoProyectoPage({ onCreated }) {
                     value={form.id}
                     onChange={e => set('id', e.target.value)}
                     disabled={loading}
+                    style={serieError ? { borderColor: 'var(--bad)' } : undefined}
                   />
+                  {serieError && (
+                    <span style={{ fontSize: 11, color: 'var(--bad)', marginTop: 4 }}>{serieError}</span>
+                  )}
                 </div>
 
                 <div className="field" style={{ gridColumn: '1 / -1' }}>
