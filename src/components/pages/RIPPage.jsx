@@ -117,6 +117,12 @@ export function RIPPage({ projects }) {
   const [reviewError,  setReviewError]  = useState(null);
   const [reviewSaved,  setReviewSaved]  = useState(false);
 
+  // --- edición semana actual ---
+  const [weekEdits,   setWeekEdits]   = useState({});
+  const [savingWeek,  setSavingWeek]  = useState(false);
+  const [weekError,   setWeekError]   = useState(null);
+  const [weekSavedAt, setWeekSavedAt] = useState(null);
+
   // --- historial ---
   const [openWeeks, setOpenWeeks] = useState(new Set());
 
@@ -152,6 +158,16 @@ export function RIPPage({ projects }) {
     setReviews(init);
   }, [entries]);
 
+  // Inicializa edits de la semana actual con los valores actuales
+  useEffect(() => {
+    const init = {};
+    entries.filter(e => e.fecha === thisMonday).forEach(e => {
+      init[e._rowIdx ?? e._localId] = { estado: e.estado, comentarios: e.comentarios };
+    });
+    setWeekEdits(init);
+    setWeekSavedAt(null);
+  }, [entries]);
+
   // Guardar reunión nueva
   async function handleSaveMeeting() {
     const toSave = [];
@@ -184,6 +200,39 @@ export function RIPPage({ projects }) {
       setMeetingError(err.message);
     } finally {
       setSavingMeeting(false);
+    }
+  }
+
+  // Guardar ediciones de la semana actual
+  async function handleSaveWeek() {
+    const currentWeek = entries.filter(e => e.fecha === thisMonday);
+    setSavingWeek(true);
+    setWeekError(null);
+    try {
+      if (useLocal) {
+        const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
+        currentWeek.forEach(e => {
+          const key = e._localId;
+          const edit = weekEdits[key];
+          if (!edit) return;
+          const idx = stored.findIndex(s => s._localId === key);
+          if (idx !== -1) { stored[idx].estado = edit.estado; stored[idx].comentarios = edit.comentarios; }
+        });
+        localStorage.setItem(LS_KEY, JSON.stringify(stored));
+        setEntries(stored);
+      } else {
+        await Promise.all(currentWeek.map(e => {
+          const edit = weekEdits[e._rowIdx];
+          if (!edit) return Promise.resolve();
+          return updateRIPEntry(e._rowIdx, edit.estado, edit.comentarios);
+        }));
+        await loadEntries();
+      }
+      setWeekSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    } catch (err) {
+      setWeekError(err.message);
+    } finally {
+      setSavingWeek(false);
     }
   }
 
@@ -434,15 +483,77 @@ export function RIPPage({ projects }) {
             </div>
           </div>
         ) : (
-          /* Resumen de la semana actual */
+          /* Semana actual — editable */
           <div className="card">
             <div className="card-h">
               <span className="card-t">Esta semana</span>
               <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
             </div>
             <div className="card-b">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {thisWeekEntries.map((e, i) => <EntryRow key={i} entry={e} />)}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {thisWeekEntries.map(e => {
+                  const key  = e._rowIdx ?? e._localId;
+                  const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
+                  return (
+                    <div key={key} style={{
+                      display: 'flex', flexDirection: 'column', gap: 8,
+                      padding: '12px 14px', borderRadius: 8,
+                      background: 'oklch(0.97 0.003 250)', border: '1px solid oklch(0.91 0.005 250)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
+                            {e.proyecto}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          {['Pendiente', 'Hecho', 'No hecho'].map(opt => (
+                            <button
+                              key={opt}
+                              onClick={() => setWeekEdits(w => ({ ...w, [key]: { ...w[key], estado: opt } }))}
+                              style={{
+                                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                                cursor: 'pointer', border: '1.5px solid',
+                                borderColor: edit.estado === opt
+                                  ? (opt === 'Hecho' ? 'var(--ok)' : opt === 'No hecho' ? 'var(--bad)' : 'var(--warn)')
+                                  : 'oklch(0.82 0.01 250)',
+                                background: edit.estado === opt
+                                  ? (opt === 'Hecho' ? 'var(--ok-soft)' : opt === 'No hecho' ? 'var(--bad-soft)' : 'oklch(0.95 0.03 80)')
+                                  : 'transparent',
+                                color: edit.estado === opt
+                                  ? (opt === 'Hecho' ? 'var(--ok)' : opt === 'No hecho' ? 'var(--bad)' : 'var(--warn)')
+                                  : 'var(--ink-2)',
+                              }}
+                            >{opt}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        className="input"
+                        placeholder="Comentario (opcional)"
+                        value={edit.comentarios ?? ''}
+                        onChange={ev => setWeekEdits(w => ({ ...w, [key]: { ...w[key], comentarios: ev.target.value } }))}
+                        style={{ fontSize: 12 }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {weekError && (
+                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>
+                  {weekError}
+                </div>
+              )}
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+                {weekSavedAt && (
+                  <span style={{ fontSize: 11, color: 'var(--ok)', fontFamily: 'var(--font-mono)' }}>
+                    Guardado a las {weekSavedAt}
+                  </span>
+                )}
+                <button className="btn btn-accent" onClick={handleSaveWeek} disabled={savingWeek}>
+                  {savingWeek ? 'Guardando…' : 'Guardar cambios'}
+                </button>
               </div>
             </div>
           </div>
