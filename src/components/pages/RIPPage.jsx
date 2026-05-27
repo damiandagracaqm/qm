@@ -3,25 +3,28 @@ import { fetchRIP, saveRIPMeeting, updateRIPEntry } from '../../services/graphSe
 
 const LS_KEY = 'gqm_rip';
 
+const CLIENT_COLORS = ['#10069F','#ef5c43','#009bd9','#00A440','#ff801d','#7c3aed','#e11d48','#0891b2'];
+const CLIENT_SOFT   = [
+  'rgba(16,6,159,0.07)','rgba(239,92,67,0.07)','rgba(0,155,217,0.07)','rgba(0,164,64,0.07)',
+  'rgba(255,128,29,0.07)','rgba(124,58,237,0.07)','rgba(225,29,72,0.07)','rgba(8,145,178,0.07)',
+];
+
 function getMondayStr(d = new Date()) {
   const date = new Date(d);
   const day = date.getDay();
   date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
   return date.toISOString().split('T')[0];
 }
-
-function prevMondayStr(mondayStr) {
-  const d = new Date(mondayStr + 'T12:00:00');
+function prevMondayStr(s) {
+  const d = new Date(s + 'T12:00:00');
   d.setDate(d.getDate() - 7);
   return d.toISOString().split('T')[0];
 }
-
 function fmtWeek(isoStr) {
   if (!isoStr) return '';
   const [y, m, dd] = isoStr.split('-').map(Number);
   return new Date(y, m - 1, dd).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
-
 function groupByFecha(entries) {
   const map = new Map();
   entries.forEach(e => {
@@ -30,40 +33,63 @@ function groupByFecha(entries) {
   });
   return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
 }
+function groupProjectsByCliente(projects) {
+  const map = new Map();
+  projects.forEach(p => {
+    const c = p.cliente?.trim() || 'Sin cliente';
+    if (!map.has(c)) map.set(c, []);
+    map.get(c).push(p);
+  });
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'es'));
+}
+function groupEntriesByCliente(entries, projectMap) {
+  const map = new Map();
+  entries.forEach(e => {
+    const cliente = e.proyecto === 'GENERAL'
+      ? 'General'
+      : (projectMap[e.proyecto]?.cliente?.trim() || 'Sin cliente');
+    if (!map.has(cliente)) map.set(cliente, []);
+    map.get(cliente).push(e);
+  });
+  return [...map.entries()].sort(([a], [b]) => {
+    if (a === 'General') return 1;
+    if (b === 'General') return -1;
+    return a.localeCompare(b, 'es');
+  });
+}
 
 function StatusBadge({ estado }) {
-  const styles = {
-    Hecho:     { color: 'var(--ok)',  bg: 'var(--ok-soft)' },
-    'No hecho':{ color: 'var(--bad)', bg: 'var(--bad-soft)' },
-    Pendiente: { color: 'var(--warn)', bg: 'oklch(0.95 0.03 80)' },
+  const cfg = {
+    Hecho:      { color: '#fff', bg: '#00A440', label: '✓ Hecho' },
+    'No hecho': { color: '#fff', bg: '#ef5c43', label: '✗ No hecho' },
+    Pendiente:  { color: '#92400e', bg: '#fde68a', label: 'Pendiente' },
   };
-  const s = styles[estado] ?? styles.Pendiente;
+  const s = cfg[estado] ?? cfg.Pendiente;
   return (
     <span style={{
-      fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 20,
-      background: s.bg, color: s.color, whiteSpace: 'nowrap', flexShrink: 0,
-    }}>
-      {estado}
-    </span>
+      fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20,
+      background: s.bg, color: s.color, whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.2,
+    }}>{s.label}</span>
   );
 }
 
-function EntryRow({ entry }) {
+function ClientSection({ cliente, colorIdx, children }) {
+  const color = CLIENT_COLORS[colorIdx % CLIENT_COLORS.length];
+  const soft  = CLIENT_SOFT[colorIdx % CLIENT_SOFT.length];
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 10,
-      padding: '9px 12px', borderRadius: 8, background: 'oklch(0.97 0.003 250)',
-    }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', minWidth: 68, paddingTop: 2 }}>
-        {entry.proyecto}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13 }}>{entry.objetivo}</div>
-        {entry.comentarios && (
-          <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 3 }}>{entry.comentarios}</div>
-        )}
+    <div style={{ marginBottom: 16 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 12px', borderRadius: 6, marginBottom: 10,
+        background: soft, borderLeft: `3px solid ${color}`,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+          {cliente}
+        </span>
       </div>
-      <StatusBadge estado={entry.estado} />
+      <div style={{ paddingLeft: 8 }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -77,41 +103,22 @@ export function RIPPage({ projects }) {
   const activeProjects = projects.filter(p =>
     p.estado && p.estado !== 'Entregado' && p.estado !== 'Cancelado'
   );
-
-  // --- filtros ---
-  const [filterCliente, setFilterCliente] = useState('');
-  const [filterLdp,     setFilterLdp]     = useState('');
-
-  const clientes = [...new Set(activeProjects.map(p => p.cliente).filter(Boolean))].sort();
-  const ldps     = [...new Set(activeProjects.map(p => p.ldp).filter(Boolean))].sort();
-
-  const filteredProjects = activeProjects.filter(p =>
-    (!filterCliente || p.cliente === filterCliente) &&
-    (!filterLdp     || p.ldp     === filterLdp)
-  );
-
-  // lookup para filtrar entradas por cliente/ldp
-  const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
-  function entryMatchesFilter(e) {
-    if (e.proyecto === 'GENERAL') return true;
-    const p = projectMap[e.proyecto];
-    if (!p) return true;
-    return (!filterCliente || p.cliente === filterCliente) &&
-           (!filterLdp     || p.ldp     === filterLdp);
-  }
+  const projectMap    = Object.fromEntries(projects.map(p => [p.id, p]));
+  const clientGroups  = groupProjectsByCliente(activeProjects);
+  const clientIndexOf = cliente => clientGroups.findIndex(([c]) => c === cliente);
 
   // --- datos ---
   const [entries,   setEntries]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [useLocal,  setUseLocal]  = useState(false);
 
-  // --- form de planificación ---
+  // --- form planificación: { [pid]: [{ id, text }] } ---
   const [objectives,    setObjectives]    = useState({});
   const [extras,        setExtras]        = useState([]);
   const [savingMeeting, setSavingMeeting] = useState(false);
   const [meetingError,  setMeetingError]  = useState(null);
 
-  // --- form de revisión (lunes) ---
+  // --- revisión (lunes) ---
   const [reviews,      setReviews]      = useState({});
   const [savingReview, setSavingReview] = useState(false);
   const [reviewError,  setReviewError]  = useState(null);
@@ -140,25 +147,23 @@ export function RIPPage({ projects }) {
       setLoading(false);
     }
   }
-
   useEffect(() => { loadEntries(); }, []);
 
-  // Datos derivados (respetan filtros de cliente/ldp)
-  const filteredEntries  = entries.filter(entryMatchesFilter);
-  const grouped          = groupByFecha(filteredEntries);
-  const thisWeekEntries  = filteredEntries.filter(e => e.fecha === thisMonday);
-  const lastWeekEntries  = entries.filter(e => e.fecha === lastMonday && entryMatchesFilter(e));
-  const pendingReview    = lastWeekEntries.filter(e => e.estado === 'Pendiente');
-  const hasThisWeek      = entries.some(e => e.fecha === thisMonday);
+  // derivados
+  const grouped         = groupByFecha(entries);
+  const thisWeekEntries = entries.filter(e => e.fecha === thisMonday);
+  const lastWeekEntries = entries.filter(e => e.fecha === lastMonday);
+  const pendingReview   = lastWeekEntries.filter(e => e.estado === 'Pendiente');
+  const hasThisWeek     = entries.some(e => e.fecha === thisMonday);
 
-  // Inicializa el estado de revisión cuando cambian los pendientes
+  // inicializar revisiones
   useEffect(() => {
     const init = {};
     pendingReview.forEach(e => { init[e._rowIdx ?? e._localId] = { estado: '', comentarios: '' }; });
     setReviews(init);
   }, [entries]);
 
-  // Inicializa edits de la semana actual con los valores actuales
+  // inicializar edits semana actual
   useEffect(() => {
     const init = {};
     entries.filter(e => e.fecha === thisMonday).forEach(e => {
@@ -168,20 +173,26 @@ export function RIPPage({ projects }) {
     setWeekSavedAt(null);
   }, [entries]);
 
-  // Guardar reunión nueva
+  // helpers objectives
+  function getObjs(pid) { return objectives[pid] ?? [{ id: `${pid}_0`, text: '' }]; }
+  function setObjs(pid, fn) { setObjectives(o => ({ ...o, [pid]: fn(getObjs(pid)) })); }
+  function addObj(pid) { setObjs(pid, arr => [...arr, { id: `${pid}_${Date.now()}`, text: '' }]); }
+  function updObj(pid, id, text) { setObjs(pid, arr => arr.map(o => o.id === id ? { ...o, text } : o)); }
+  function remObj(pid, id) { setObjs(pid, arr => arr.length > 1 ? arr.filter(o => o.id !== id) : arr); }
+
+  // guardar reunión nueva
   async function handleSaveMeeting() {
     const toSave = [];
     activeProjects.forEach(p => {
-      const obj = objectives[p.id]?.trim();
-      if (obj) toSave.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj });
+      getObjs(p.id).forEach(obj => {
+        if (obj.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj.text.trim() });
+      });
     });
     extras.forEach(ex => {
       if (ex.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: 'GENERAL', objetivo: ex.text.trim() });
     });
     if (!toSave.length) return;
-
-    setSavingMeeting(true);
-    setMeetingError(null);
+    setSavingMeeting(true); setMeetingError(null);
     try {
       if (useLocal) {
         const existing = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
@@ -194,20 +205,43 @@ export function RIPPage({ projects }) {
         await saveRIPMeeting(toSave);
         await loadEntries();
       }
-      setObjectives({});
-      setExtras([]);
-    } catch (err) {
-      setMeetingError(err.message);
-    } finally {
-      setSavingMeeting(false);
-    }
+      setObjectives({}); setExtras([]);
+    } catch (err) { setMeetingError(err.message); }
+    finally { setSavingMeeting(false); }
   }
 
-  // Guardar ediciones de la semana actual
+  // guardar revisión semana anterior
+  async function handleSaveReview() {
+    setSavingReview(true); setReviewError(null);
+    try {
+      const updates = pendingReview.map(e => {
+        const key = e._rowIdx ?? e._localId;
+        const r   = reviews[key] ?? {};
+        return { entry: e, estado: r.estado || 'No hecho', comentarios: r.comentarios || '' };
+      });
+      if (useLocal) {
+        const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
+        updates.forEach(({ entry, estado, comentarios }) => {
+          const idx = stored.findIndex(e => e._localId === entry._localId);
+          if (idx !== -1) { stored[idx].estado = estado; stored[idx].comentarios = comentarios; }
+        });
+        localStorage.setItem(LS_KEY, JSON.stringify(stored));
+        setEntries(stored);
+      } else {
+        await Promise.all(updates.map(({ entry, estado, comentarios }) =>
+          updateRIPEntry(entry._rowIdx, estado, comentarios)
+        ));
+        await loadEntries();
+      }
+      setReviewSaved(true);
+    } catch (err) { setReviewError(err.message); }
+    finally { setSavingReview(false); }
+  }
+
+  // guardar ediciones semana actual
   async function handleSaveWeek() {
     const currentWeek = entries.filter(e => e.fecha === thisMonday);
-    setSavingWeek(true);
-    setWeekError(null);
+    setSavingWeek(true); setWeekError(null);
     try {
       if (useLocal) {
         const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
@@ -229,53 +263,16 @@ export function RIPPage({ projects }) {
         await loadEntries();
       }
       setWeekSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
-    } catch (err) {
-      setWeekError(err.message);
-    } finally {
-      setSavingWeek(false);
-    }
-  }
-
-  // Guardar revisión
-  async function handleSaveReview() {
-    setSavingReview(true);
-    setReviewError(null);
-    try {
-      const updates = pendingReview.map(e => {
-        const key = e._rowIdx ?? e._localId;
-        const r   = reviews[key] ?? {};
-        return { entry: e, estado: r.estado || 'No hecho', comentarios: r.comentarios || '' };
-      });
-
-      if (useLocal) {
-        const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-        updates.forEach(({ entry, estado, comentarios }) => {
-          const idx = stored.findIndex(e => e._localId === entry._localId);
-          if (idx !== -1) { stored[idx].estado = estado; stored[idx].comentarios = comentarios; }
-        });
-        localStorage.setItem(LS_KEY, JSON.stringify(stored));
-        setEntries(stored);
-      } else {
-        await Promise.all(updates.map(({ entry, estado, comentarios }) =>
-          updateRIPEntry(entry._rowIdx, estado, comentarios)
-        ));
-        await loadEntries();
-      }
-      setReviewSaved(true);
-    } catch (err) {
-      setReviewError(err.message);
-    } finally {
-      setSavingReview(false);
-    }
+    } catch (err) { setWeekError(err.message); }
+    finally { setSavingWeek(false); }
   }
 
   function toggleWeek(fecha) {
-    setOpenWeeks(prev => {
-      const next = new Set(prev);
-      next.has(fecha) ? next.delete(fecha) : next.add(fecha);
-      return next;
-    });
+    setOpenWeeks(prev => { const n = new Set(prev); n.has(fecha) ? n.delete(fecha) : n.add(fecha); return n; });
   }
+
+  const hasAnyObjective = activeProjects.some(p => getObjs(p.id).some(o => o.text?.trim())) ||
+                          extras.some(e => e.text?.trim());
 
   if (loading) return (
     <div className="page-body">
@@ -289,9 +286,8 @@ export function RIPPage({ projects }) {
 
   return (
     <div className="page-body">
-      <div style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        {/* Indicador de fuente */}
         {useLocal && (
           <div style={{
             padding: '8px 14px', borderRadius: 8, fontSize: 11,
@@ -302,115 +298,69 @@ export function RIPPage({ projects }) {
           </div>
         )}
 
-        {/* Filtros */}
-        {(clientes.length > 0 || ldps.length > 0) && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {clientes.length > 0 && (
-              <select
-                className="input"
-                value={filterCliente}
-                onChange={e => setFilterCliente(e.target.value)}
-                style={{ flex: '1 1 180px', fontSize: 12 }}
-              >
-                <option value="">Todos los clientes</option>
-                {clientes.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
-            {ldps.length > 0 && (
-              <select
-                className="input"
-                value={filterLdp}
-                onChange={e => setFilterLdp(e.target.value)}
-                style={{ flex: '1 1 180px', fontSize: 12 }}
-              >
-                <option value="">Todos los LDP</option>
-                {ldps.map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
-            )}
-            {(filterCliente || filterLdp) && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => { setFilterCliente(''); setFilterLdp(''); }}
-              >
-                Limpiar filtros
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Revisión de semana anterior (solo lunes con pendientes) */}
-        {isMonday && pendingReview.length > 0 && !reviewSaved && (
-          <div className="card">
-            <div className="card-h">
-              <span className="card-t">Revisar semana anterior</span>
-              <span className="card-sub">Semana del {fmtWeek(lastMonday)}</span>
-            </div>
-            <div className="card-b">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {pendingReview.map(e => {
-                  const key = e._rowIdx ?? e._localId;
-                  const rev = reviews[key] ?? {};
-                  return (
-                    <div key={key} style={{
-                      display: 'flex', flexDirection: 'column', gap: 8,
-                      padding: '12px 14px', borderRadius: 8,
-                      background: 'oklch(0.97 0.003 250)', border: '1px solid oklch(0.91 0.005 250)',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
-                            {e.proyecto}
-                          </span>
-                          <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {['Hecho', 'No hecho'].map(opt => (
-                            <button
-                              key={opt}
-                              onClick={() => setReviews(r => ({ ...r, [key]: { ...r[key], estado: opt } }))}
-                              style={{
-                                padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                                cursor: 'pointer', border: '1.5px solid',
-                                borderColor: rev.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok)' : 'var(--bad)')
-                                  : 'oklch(0.82 0.01 250)',
-                                background: rev.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok-soft)' : 'var(--bad-soft)')
-                                  : 'transparent',
-                                color: rev.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok)' : 'var(--bad)')
-                                  : 'var(--ink-2)',
-                              }}
-                            >{opt}</button>
-                          ))}
-                        </div>
-                      </div>
-                      <input
-                        className="input"
-                        placeholder="Comentario (opcional)"
-                        value={rev.comentarios ?? ''}
-                        onChange={ev => setReviews(r => ({ ...r, [key]: { ...r[key], comentarios: ev.target.value } }))}
-                        style={{ fontSize: 12 }}
-                      />
-                    </div>
-                  );
-                })}
+        {/* ── Revisión semana anterior (solo lunes) ── */}
+        {isMonday && pendingReview.length > 0 && !reviewSaved && (() => {
+          const byCliente = groupEntriesByCliente(pendingReview, projectMap);
+          return (
+            <div className="card">
+              <div className="card-h" style={{ background: 'oklch(0.97 0.01 250)', borderRadius: '10px 10px 0 0', margin: '-1px -1px 0', padding: '14px 20px' }}>
+                <span className="card-t">Revisar semana anterior</span>
+                <span className="card-sub">Semana del {fmtWeek(lastMonday)}</span>
               </div>
-              {reviewError && (
-                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>
-                  {reviewError}
+              <div className="card-b">
+                {byCliente.map(([cliente, items], ci) => (
+                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci}>
+                    {items.map(e => {
+                      const key = e._rowIdx ?? e._localId;
+                      const rev = reviews[key] ?? {};
+                      return (
+                        <div key={key} style={{
+                          marginBottom: 10, padding: '10px 14px', borderRadius: 8,
+                          background: 'oklch(0.975 0.002 250)', border: '1px solid oklch(0.91 0.005 250)',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{e.proyecto}</span>
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              {['Hecho', 'No hecho'].map(opt => (
+                                <button key={opt} onClick={() => setReviews(r => ({ ...r, [key]: { ...r[key], estado: opt } }))}
+                                  style={{
+                                    padding: '4px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                                    cursor: 'pointer', border: '2px solid',
+                                    borderColor: rev.estado === opt ? (opt === 'Hecho' ? '#00A440' : '#ef5c43') : 'oklch(0.85 0.01 250)',
+                                    background: rev.estado === opt ? (opt === 'Hecho' ? '#00A440' : '#ef5c43') : 'transparent',
+                                    color: rev.estado === opt ? '#fff' : 'var(--ink-2)',
+                                    transition: 'all 0.15s',
+                                  }}>{opt === 'Hecho' ? '✓ Hecho' : '✗ No hecho'}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <input className="input" placeholder="Comentario (opcional)"
+                            value={rev.comentarios ?? ''}
+                            onChange={ev => setReviews(r => ({ ...r, [key]: { ...r[key], comentarios: ev.target.value } }))}
+                            style={{ fontSize: 12 }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </ClientSection>
+                ))}
+                {reviewError && (
+                  <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{reviewError}</div>
+                )}
+                <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-accent" onClick={handleSaveReview} disabled={savingReview}>
+                    {savingReview ? 'Guardando…' : 'Guardar revisión'}
+                  </button>
                 </div>
-              )}
-              <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="btn btn-accent" onClick={handleSaveReview} disabled={savingReview}>
-                  {savingReview ? 'Guardando…' : 'Guardar revisión'}
-                </button>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
-        {/* Planificación de esta semana */}
+        {/* ── Planificación o resumen semana actual ── */}
         {!hasThisWeek ? (
           <div className="card">
             <div className="card-h">
@@ -418,138 +368,142 @@ export function RIPPage({ projects }) {
               <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
             </div>
             <div className="card-b">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {filteredProjects.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos que coincidan con los filtros.</div>
-                )}
-                {filteredProjects.map(p => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap', minWidth: 68 }}>
-                      {p.id}
-                    </span>
-                    <input
-                      className="input"
-                      placeholder="Objetivo para esta semana"
-                      value={objectives[p.id] ?? ''}
-                      onChange={e => setObjectives(o => ({ ...o, [p.id]: e.target.value }))}
-                      style={{ flex: 1, fontSize: 12 }}
-                    />
-                  </div>
-                ))}
-                {extras.map((ex, i) => (
-                  <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', minWidth: 68 }}>
-                      GENERAL
-                    </span>
-                    <input
-                      className="input"
-                      placeholder="Objetivo general"
-                      value={ex.text}
-                      onChange={e => setExtras(prev => prev.map((x, j) => j === i ? { ...x, text: e.target.value } : x))}
-                      style={{ flex: 1, fontSize: 12 }}
-                    />
-                    <button
-                      onClick={() => setExtras(prev => prev.filter((_, j) => j !== i))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 18, lineHeight: 1, padding: '0 4px' }}
-                    >×</button>
-                  </div>
-                ))}
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setExtras(prev => [...prev, { id: Date.now(), text: '' }])}
-                  style={{ alignSelf: 'flex-start', marginTop: 2 }}
-                >
-                  + Agregar objetivo general
-                </button>
-              </div>
+              {clientGroups.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos activos.</div>
+              )}
+              {clientGroups.map(([cliente, projs], ci) => (
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                  {projs.map(p => (
+                    <div key={p.id} style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{p.id}</span>
+                        {p.desc && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>— {p.desc}</span>}
+                      </div>
+                      {getObjs(p.id).map((obj, oi) => (
+                        <div key={obj.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
+                          <input className="input"
+                            placeholder="Objetivo de la semana"
+                            value={obj.text}
+                            onChange={e => updObj(p.id, obj.id, e.target.value)}
+                            style={{ flex: 1, fontSize: 12 }}
+                          />
+                          {getObjs(p.id).length > 1 && (
+                            <button onClick={() => remObj(p.id, obj.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, padding: '0 2px', lineHeight: 1 }}>×</button>
+                          )}
+                        </div>
+                      ))}
+                      <button onClick={() => addObj(p.id)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', paddingLeft: 22, marginTop: 2 }}>
+                        + agregar objetivo
+                      </button>
+                    </div>
+                  ))}
+                </ClientSection>
+              ))}
+
+              {/* GENERAL */}
+              {(extras.length > 0 || clientGroups.length > 0) && (
+                <ClientSection cliente="General" colorIdx={clientGroups.length}>
+                  {extras.map((ex, i) => (
+                    <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
+                      <input className="input" placeholder="Objetivo general"
+                        value={ex.text}
+                        onChange={e => setExtras(prev => prev.map((x, j) => j === i ? { ...x, text: e.target.value } : x))}
+                        style={{ flex: 1, fontSize: 12 }}
+                      />
+                      <button onClick={() => setExtras(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, padding: '0 2px', lineHeight: 1 }}>×</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setExtras(prev => [...prev, { id: Date.now(), text: '' }])}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', paddingLeft: 22, marginTop: 2 }}>
+                    + agregar objetivo general
+                  </button>
+                </ClientSection>
+              )}
 
               {meetingError && (
-                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>
-                  {meetingError}
-                </div>
+                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{meetingError}</div>
               )}
-              <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  className="btn btn-accent"
-                  onClick={handleSaveMeeting}
-                  disabled={
-                    savingMeeting ||
-                    (!Object.values(objectives).some(v => v?.trim()) && !extras.some(e => e.text?.trim()))
-                  }
-                >
+              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="btn btn-accent" onClick={handleSaveMeeting} disabled={savingMeeting || !hasAnyObjective}>
                   {savingMeeting ? 'Guardando…' : 'Guardar reunión'}
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          /* Semana actual — editable */
+          /* ── Semana actual editable ── */
           <div className="card">
             <div className="card-h">
               <span className="card-t">Esta semana</span>
               <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
             </div>
             <div className="card-b">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {thisWeekEntries.map(e => {
-                  const key  = e._rowIdx ?? e._localId;
-                  const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
-                  return (
-                    <div key={key} style={{
-                      display: 'flex', flexDirection: 'column', gap: 8,
-                      padding: '12px 14px', borderRadius: 8,
-                      background: 'oklch(0.97 0.003 250)', border: '1px solid oklch(0.91 0.005 250)',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>
-                            {e.proyecto}
-                          </span>
-                          <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
+              {groupEntriesByCliente(thisWeekEntries, projectMap).map(([cliente, items], ci) => (
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                  {items.map(e => {
+                    const key  = e._rowIdx ?? e._localId;
+                    const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
+                    const done = edit.estado === 'Hecho';
+                    const nope = edit.estado === 'No hecho';
+                    return (
+                      <div key={key} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10,
+                        padding: '10px 14px', borderRadius: 8, marginBottom: 8,
+                        background: done ? 'rgba(0,164,64,0.06)' : nope ? 'rgba(239,92,67,0.06)' : 'oklch(0.975 0.002 250)',
+                        border: `1px solid ${done ? 'rgba(0,164,64,0.25)' : nope ? 'rgba(239,92,67,0.25)' : 'oklch(0.91 0.005 250)'}`,
+                        transition: 'all 0.15s',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>{e.proyecto}</span>
+                            <span style={{ fontSize: 13, fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--ink-3)' : 'var(--ink)' }}>
+                              {e.objetivo}
+                            </span>
+                          </div>
+                          <input className="input" placeholder="Comentario (opcional)"
+                            value={edit.comentarios ?? ''}
+                            onChange={ev => setWeekEdits(w => ({ ...w, [key]: { ...w[key], comentarios: ev.target.value } }))}
+                            style={{ fontSize: 11, padding: '4px 8px' }}
+                          />
                         </div>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {['Pendiente', 'Hecho', 'No hecho'].map(opt => (
-                            <button
-                              key={opt}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+                          {['Hecho', 'No hecho', 'Pendiente'].map(opt => (
+                            <button key={opt}
                               onClick={() => setWeekEdits(w => ({ ...w, [key]: { ...w[key], estado: opt } }))}
                               style={{
-                                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                                cursor: 'pointer', border: '1.5px solid',
+                                padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                                cursor: 'pointer', border: '1.5px solid', whiteSpace: 'nowrap',
                                 borderColor: edit.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok)' : opt === 'No hecho' ? 'var(--bad)' : 'var(--warn)')
-                                  : 'oklch(0.82 0.01 250)',
+                                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#d97706')
+                                  : 'oklch(0.85 0.01 250)',
                                 background: edit.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok-soft)' : opt === 'No hecho' ? 'var(--bad-soft)' : 'oklch(0.95 0.03 80)')
+                                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#fde68a')
                                   : 'transparent',
                                 color: edit.estado === opt
-                                  ? (opt === 'Hecho' ? 'var(--ok)' : opt === 'No hecho' ? 'var(--bad)' : 'var(--warn)')
-                                  : 'var(--ink-2)',
-                              }}
-                            >{opt}</button>
+                                  ? (opt === 'Pendiente' ? '#92400e' : '#fff')
+                                  : 'var(--ink-3)',
+                                transition: 'all 0.15s',
+                              }}>
+                              {opt === 'Hecho' ? '✓' : opt === 'No hecho' ? '✗' : '○'} {opt}
+                            </button>
                           ))}
                         </div>
                       </div>
-                      <input
-                        className="input"
-                        placeholder="Comentario (opcional)"
-                        value={edit.comentarios ?? ''}
-                        onChange={ev => setWeekEdits(w => ({ ...w, [key]: { ...w[key], comentarios: ev.target.value } }))}
-                        style={{ fontSize: 12 }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </ClientSection>
+              ))}
               {weekError && (
-                <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>
-                  {weekError}
-                </div>
+                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{weekError}</div>
               )}
               <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
                 {weekSavedAt && (
-                  <span style={{ fontSize: 11, color: 'var(--ok)', fontFamily: 'var(--font-mono)' }}>
-                    Guardado a las {weekSavedAt}
-                  </span>
+                  <span style={{ fontSize: 11, color: '#00A440', fontFamily: 'var(--font-mono)' }}>✓ Guardado {weekSavedAt}</span>
                 )}
                 <button className="btn btn-accent" onClick={handleSaveWeek} disabled={savingWeek}>
                   {savingWeek ? 'Guardando…' : 'Guardar cambios'}
@@ -559,56 +513,75 @@ export function RIPPage({ projects }) {
           </div>
         )}
 
-        {/* Historial */}
+        {/* ── Historial ── */}
         {historyWeeks.length > 0 && (
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div className="card-h" style={{ padding: '14px 20px' }}>
               <span className="card-t">Historial</span>
               <span className="card-sub">{historyWeeks.length} {historyWeeks.length === 1 ? 'semana' : 'semanas'} anteriores</span>
             </div>
-            <div>
-              {historyWeeks.map(([fecha, items], wIdx) => {
-                const done  = items.filter(e => e.estado === 'Hecho').length;
-                const total = items.length;
-                const pend  = items.filter(e => e.estado === 'Pendiente').length;
-                const isOpen = openWeeks.has(fecha);
-                const allDone = done === total && pend === 0;
-                return (
-                  <div key={fecha} style={{ borderTop: wIdx === 0 ? '1px solid oklch(0.91 0.005 250)' : 'none', borderBottom: '1px solid oklch(0.91 0.005 250)' }}>
-                    <button
-                      onClick={() => toggleWeek(fecha)}
-                      style={{
-                        width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                        padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                      }}
-                    >
-                      <span style={{
-                        fontSize: 10, color: 'var(--ink-3)',
-                        transform: isOpen ? 'rotate(90deg)' : 'none',
-                        transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0,
-                      }}>▶</span>
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
-                        Semana del {fmtWeek(fecha)}
+            {historyWeeks.map(([fecha, items], wIdx) => {
+              const done  = items.filter(e => e.estado === 'Hecho').length;
+              const total = items.length;
+              const pend  = items.filter(e => e.estado === 'Pendiente').length;
+              const isOpen = openWeeks.has(fecha);
+              const allDone = done === total && pend === 0;
+              const byCliente = groupEntriesByCliente(items, projectMap);
+              return (
+                <div key={fecha} style={{ borderTop: '1px solid oklch(0.91 0.005 250)' }}>
+                  <button onClick={() => toggleWeek(fecha)}
+                    style={{
+                      width: '100%', background: isOpen ? 'oklch(0.97 0.003 250)' : 'none',
+                      border: 'none', cursor: 'pointer',
+                      padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                      transition: 'background 0.15s',
+                    }}>
+                    <span style={{ fontSize: 10, color: 'var(--ink-3)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>Semana del {fmtWeek(fecha)}</span>
+                    {pend > 0 ? (
+                      <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', padding: '2px 10px', borderRadius: 20, background: '#fde68a', color: '#92400e', fontWeight: 700 }}>
+                        {pend} sin revisar
                       </span>
-                      {pend > 0 ? (
-                        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--warn)' }}>
-                          {pend} sin revisar
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: allDone ? 'var(--ok)' : 'var(--ink-2)' }}>
-                          {done}/{total} cumplidos
-                        </span>
-                      )}
-                    </button>
-                    {isOpen && (
-                      <div style={{ padding: '0 20px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {items.map((e, i) => <EntryRow key={i} entry={e} />)}
-                      </div>
+                    ) : (
+                      <span style={{
+                        fontSize: 11, fontFamily: 'var(--font-mono)', padding: '2px 10px', borderRadius: 20, fontWeight: 700,
+                        background: allDone ? 'rgba(0,164,64,0.12)' : 'oklch(0.93 0.005 250)',
+                        color: allDone ? '#00A440' : 'var(--ink-2)',
+                      }}>
+                        {done}/{total} cumplidos
+                      </span>
                     )}
-                  </div>
-                );
-              })}
-            </div>
+                  </button>
+                  {isOpen && (
+                    <div style={{ padding: '4px 20px 16px' }}>
+                      {byCliente.map(([cliente, centries], ci) => (
+                        <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                          {centries.map((e, i) => (
+                            <div key={i} style={{
+                              display: 'flex', alignItems: 'flex-start', gap: 10,
+                              padding: '8px 12px', borderRadius: 8, marginBottom: 6,
+                              background: e.estado === 'Hecho' ? 'rgba(0,164,64,0.06)' : e.estado === 'No hecho' ? 'rgba(239,92,67,0.06)' : 'oklch(0.975 0.002 250)',
+                              border: `1px solid ${e.estado === 'Hecho' ? 'rgba(0,164,64,0.2)' : e.estado === 'No hecho' ? 'rgba(239,92,67,0.2)' : 'oklch(0.91 0.005 250)'}`,
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>{e.proyecto}</span>
+                                  <span style={{ fontSize: 13, textDecoration: e.estado === 'Hecho' ? 'line-through' : 'none', color: e.estado === 'Hecho' ? 'var(--ink-3)' : 'var(--ink)' }}>
+                                    {e.objetivo}
+                                  </span>
+                                </div>
+                                {e.comentarios && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 3 }}>{e.comentarios}</div>}
+                              </div>
+                              <StatusBadge estado={e.estado} />
+                            </div>
+                          ))}
+                        </ClientSection>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
