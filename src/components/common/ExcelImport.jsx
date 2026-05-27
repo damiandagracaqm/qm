@@ -173,6 +173,47 @@ function parsePlanningRows(rows) {
   return map;
 }
 
+export function parseDashboardWorkbook(workbook) {
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const sheetName = workbook.SheetNames.find(n => norm(n).includes('dashboard'));
+  if (!sheetName) return null;
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: null });
+
+  function findTable(keyword) {
+    const normKw = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].some(c => normKw(c).includes(keyword))) continue;
+      let hi = i + 1;
+      while (hi < rows.length && rows[hi].every(c => c === null || c === '' || c === undefined)) hi++;
+      if (hi >= rows.length) return null;
+      const cols = rows[hi]
+        .map((h, idx) => ({ idx, label: String(h ?? '').trim() }))
+        .filter(({ label }) => label !== '');
+      if (cols.length < 2) return null;
+      const data = [];
+      for (let di = hi + 1; di < rows.length; di++) {
+        const row = rows[di];
+        if (!row || row.every(c => c === null || c === '' || c === undefined)) break;
+        const obj = {};
+        let hasData = false;
+        cols.forEach(({ idx, label }) => {
+          const val = row[idx];
+          obj[label] = val;
+          if (val !== null && val !== '' && val !== undefined) hasData = true;
+        });
+        if (hasData) data.push(obj);
+      }
+      return { headers: cols.map(c => c.label), data };
+    }
+    return null;
+  }
+
+  return {
+    equiposEntregados: findTable('equipos entregados'),
+    resumenGeneral:    findTable('resumen general'),
+  };
+}
+
 export function parsePlanningWorkbook(workbook) {
   const sheetName = workbook.SheetNames.find(n =>
     n.toLowerCase().includes('planif')

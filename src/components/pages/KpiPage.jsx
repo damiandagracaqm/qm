@@ -89,7 +89,70 @@ function CapacidadChart({ ldps, weeks }) {
   );
 }
 
-export function KpiPage({ projects, capacidadData }) {
+function fmtDashVal(val) {
+  if (val === null || val === undefined || val === '') return '—';
+  if (typeof val === 'number') {
+    if (Number.isInteger(val)) return val.toLocaleString('es-AR');
+    // Decimales entre 0 y 9.99 probablemente son porcentajes (0.757 → 75.7%)
+    if (val > 0 && val < 10) return `${(val * 100).toFixed(1)}%`;
+    return val.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+  }
+  return String(val);
+}
+
+function DashTable({ title, table }) {
+  if (!table?.data?.length) return null;
+  const firstCol = table.headers[0];
+  return (
+    <div className="card">
+      <div className="card-h">
+        <span className="card-t">{title}</span>
+        <span className="card-sub">{table.data.length - 1} meses · fuente: Dashboard Excel</span>
+      </div>
+      <div className="card-b" style={{ padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {table.headers.map(h => (
+                <th key={h} style={{
+                  padding: '8px 16px', textAlign: h === firstCol ? 'left' : 'center',
+                  fontSize: 11, fontWeight: 600, color: 'var(--ink-2)',
+                  borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.data.map((row, i) => {
+              const isTotal = String(row[firstCol] ?? '').toLowerCase().includes('total');
+              return (
+                <tr key={i} style={{
+                  background: isTotal ? 'oklch(0.96 0.003 250)' : 'transparent',
+                  fontWeight: isTotal ? 600 : 400,
+                  borderTop: isTotal ? '1px solid var(--line)' : 'none',
+                }}>
+                  {table.headers.map((h, j) => (
+                    <td key={h} style={{
+                      padding: '9px 16px',
+                      borderBottom: i < table.data.length - 1 && !isTotal ? '1px solid var(--line)' : 'none',
+                      textAlign: j === 0 ? 'left' : 'center',
+                      fontFamily: j === 0 ? 'inherit' : 'var(--font-mono)',
+                      fontSize: j === 0 ? 13 : 12,
+                    }}>
+                      {fmtDashVal(row[h])}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function KpiPage({ projects, capacidadData, dashboardData }) {
   const activos    = useMemo(() => projects.filter(p => !ESTADOS_TERMINALES.has(p.estado)), [projects]);
   const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.has(p.estado)),   [projects]);
 
@@ -252,6 +315,21 @@ export function KpiPage({ projects, capacidadData }) {
         </div>
 
       </div>
+
+      {/* ── Tablas del Dashboard Excel ─────────────────── */}
+      {dashboardData?.equiposEntregados && (
+        <DashTable
+          title="Equipos entregados — últimos 4 meses"
+          table={dashboardData.equiposEntregados}
+        />
+      )}
+      {dashboardData?.resumenGeneral && (
+        <DashTable
+          title="Resumen general — proyectos activos"
+          table={dashboardData.resumenGeneral}
+        />
+      )}
+
     </div>
   );
 }

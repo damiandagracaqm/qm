@@ -446,6 +446,63 @@ export async function addProject({ id, desc, ldp, finEst }) {
   );
 }
 
+const DASHBOARD_SHEET_KEYWORD = 'dashboard';
+
+function parseDashboard(rows) {
+  if (!rows || rows.length === 0) return null;
+  const norm = v => String(v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+  function findTable(keyword) {
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].some(c => norm(c).includes(keyword))) continue;
+      // Busca la fila de encabezados (primera fila no vacía luego del título)
+      let hi = i + 1;
+      while (hi < rows.length && rows[hi].every(c => c === null || c === '' || c === undefined)) hi++;
+      if (hi >= rows.length) return null;
+      // Columnas con contenido
+      const cols = rows[hi]
+        .map((h, idx) => ({ idx, label: String(h ?? '').trim() }))
+        .filter(({ label }) => label !== '');
+      if (cols.length < 2) return null;
+      // Filas de datos
+      const data = [];
+      for (let di = hi + 1; di < rows.length; di++) {
+        const row = rows[di];
+        if (!row || row.every(c => c === null || c === '' || c === undefined)) break;
+        const obj = {};
+        let hasData = false;
+        cols.forEach(({ idx, label }) => {
+          const val = row[idx];
+          obj[label] = val;
+          if (val !== null && val !== '' && val !== undefined) hasData = true;
+        });
+        if (hasData) data.push(obj);
+      }
+      return { headers: cols.map(c => c.label), data };
+    }
+    return null;
+  }
+
+  return {
+    equiposEntregados: findTable('equipos entregados'),
+    resumenGeneral:    findTable('resumen general'),
+  };
+}
+
+export async function fetchDashboard() {
+  const { driveId, itemId } = await resolveDriveItem();
+  const { value: sheets } = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets?$select=id,name`
+  );
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const sheet = sheets?.find(s => norm(s.name).includes(DASHBOARD_SHEET_KEYWORD));
+  if (!sheet) throw new Error(`Hoja Dashboard no encontrada. Hojas: ${sheets?.map(s => s.name).join(', ')}`);
+  const range = await graphGet(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(sheet.name)}')/usedRange`
+  );
+  return parseDashboard(range.values);
+}
+
 const RIP_SHEET = 'RIP';
 
 async function ensureRIPSheet(driveId, itemId) {

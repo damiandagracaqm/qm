@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
-import { fetchProjects, fetchPlanning, fetchCapacidad, updateBudgetPct } from './services/graphService';
+import { fetchProjects, fetchPlanning, fetchCapacidad, fetchDashboard, updateBudgetPct } from './services/graphService';
 import { ADMIN_EMAILS } from './config/roles';
 import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
@@ -10,7 +10,7 @@ import { AprobacionesPage } from './components/pages/AprobacionesPage';
 import { NuevoProyectoPage } from './components/pages/NuevoProyectoPage';
 import { RIPPage } from './components/pages/RIPPage';
 import { DetailView } from './components/detail/DetailView';
-import { ExcelImport, PlanningImport, downloadWorkbook, updateWorkbookBudgetPct } from './components/common/ExcelImport';
+import { ExcelImport, PlanningImport, downloadWorkbook, updateWorkbookBudgetPct, parseDashboardWorkbook } from './components/common/ExcelImport';
 
 function Skel({ w, h = 12, block = false }) {
   return (
@@ -160,7 +160,8 @@ export default function App() {
   const [xlsxSource, setXlsxSource] = useState('none');
   const [loadingXlsx, setLoadingXlsx] = useState(false);
   const [xlsxError, setXlsxError] = useState(null);
-  const [capacidadData, setCapacidadData] = useState(null);
+  const [capacidadData,  setCapacidadData]  = useState(null);
+  const [dashboardData,  setDashboardData]  = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [showPlanningImport, setShowPlanningImport] = useState(false);
   const [planningMap, setPlanningMap] = useState(new Map());
@@ -180,6 +181,9 @@ export default function App() {
     fetchCapacidad()
       .then(data => { if (data) setCapacidadData(data); })
       .catch(err => console.warn('[Capacidad] Error:', err.message));
+    fetchDashboard()
+      .then(data => { if (data) setDashboardData(data); })
+      .catch(err => console.warn('[Dashboard] Error:', err.message));
 
     Promise.all([
       fetchProjects(),
@@ -231,6 +235,8 @@ export default function App() {
       if (meta) {
         workbookRef.current = meta.workbook;
         setXlsxMeta({ sheetName: meta.sheetName, budgetColIdx: meta.budgetColIdx });
+        const dash = parseDashboardWorkbook(meta.workbook);
+        if (dash) setDashboardData(dash);
       }
       console.log('Hojas disponibles:', sheetNames);
     } else {
@@ -513,7 +519,7 @@ export default function App() {
               </div>
             </div>
 
-            {page === 'kpi' && <KpiPage projects={mergedProjects} onOpenDetail={openDetail} capacidadData={capacidadData} />}
+            {page === 'kpi' && <KpiPage projects={mergedProjects} onOpenDetail={openDetail} capacidadData={capacidadData} dashboardData={dashboardData} />}
             {page === 'proyectos' && <ProyectosPage projects={mergedProjects} onOpenDetail={openDetail} />}
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
             {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}
