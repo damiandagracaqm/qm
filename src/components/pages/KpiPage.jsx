@@ -323,12 +323,6 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
           table={dashboardData.equiposEntregados}
         />
       )}
-      {dashboardData?.resumenGeneral && (
-        <DashTable
-          title="Resumen general — proyectos activos"
-          table={dashboardData.resumenGeneral}
-        />
-      )}
 
     </div>
   );
