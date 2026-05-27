@@ -204,8 +204,7 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
           <div className="card-b" style={{ paddingTop: 8, paddingBottom: 8 }}>
             <div className="info-row"><span className="l">Estadío actual</span><span className="v">{p.estado}</span></div>
             <div className="info-row"><span className="l">Próximo estadío</span><span className="v">{p.prox}</span></div>
-            <div className="info-row"><span className="l">HH plan / real</span><span className="v mono">{totalP.toLocaleString()} / {totalR.toLocaleString()}</span></div>
-            <div className="info-row"><span className="l">% Avance HH</span><span className="v mono">{pctHH}%</span></div>
+            <div className="info-row"><span className="l">HH plan / real</span><span className="v mono">{totalP.toLocaleString()} / {totalR.toLocaleString()} ({pctHH}%)</span></div>
             <div className="info-row">
               <span className="l">Desvío</span>
               <span className="v mono" style={{ color: desvioColor }}>
