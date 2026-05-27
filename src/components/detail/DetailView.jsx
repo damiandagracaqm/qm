@@ -118,7 +118,7 @@ function ChangeRequestForm({ proyId, onSubmit }) {
   );
 }
 
-export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSaveBudgetPct }) {
+export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSaveBudgetPct, isAdmin }) {
   if (!project) return null;
   const p = project;
 
@@ -219,16 +219,18 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
           <div className="card-h">
             <span className="card-t">Presupuesto</span>
             <span className="card-sub">USD</span>
-            <button
-              onClick={startEditBudget}
-              title="Editar % consumido"
-              style={{
-                marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--ink-3)', padding: '2px 6px', borderRadius: 4, lineHeight: 1,
-              }}
-            >
-              <PencilIcon />
-            </button>
+            {isAdmin && (
+              <button
+                onClick={startEditBudget}
+                title="Editar % consumido"
+                style={{
+                  marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--ink-3)', padding: '2px 6px', borderRadius: 4, lineHeight: 1,
+                }}
+              >
+                <PencilIcon />
+              </button>
+            )}
           </div>
           <div className="card-b">
             <BudgetGauge budget={p.budget} pct={displayPct} />

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { loginRequest } from './auth/msalConfig';
 import { fetchProjects, fetchPlanning, fetchCapacidad, updateBudgetPct } from './services/graphService';
+import { ADMIN_EMAILS } from './config/roles';
 import { INITIAL_PEND_REQS, INITIAL_HIST_REQS } from './data/projects';
 import { KpiPage } from './components/pages/KpiPage';
 import { ProyectosPage } from './components/pages/ProyectosPage';
@@ -148,6 +149,8 @@ const PAGE_LABELS = {
 export default function App() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
+
+  const isAdmin = ADMIN_EMAILS.includes(accounts[0]?.username?.toLowerCase());
 
   const [page, setPage] = useState('kpi');
   const [currentProj, setCurrentProj] = useState(null);
@@ -327,13 +330,15 @@ export default function App() {
           </span>
           {loadingXlsx && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warn)', marginLeft: 4 }} />}
         </button>
-        <button
-          className={`nav-item ${page === 'aprobaciones' ? 'active' : ''}`}
-          onClick={() => setPage('aprobaciones')}
-        >
-          <NavIcon.inbox /> Aprobaciones
-          {pendCount > 0 && <span className="nav-badge">{pendCount}</span>}
-        </button>
+        {isAdmin && (
+          <button
+            className={`nav-item ${page === 'aprobaciones' ? 'active' : ''}`}
+            onClick={() => setPage('aprobaciones')}
+          >
+            <NavIcon.inbox /> Aprobaciones
+            {pendCount > 0 && <span className="nav-badge">{pendCount}</span>}
+          </button>
+        )}
         <button
           className={`nav-item ${page === 'nuevo' ? 'active' : ''}`}
           onClick={() => setPage('nuevo')}
@@ -513,7 +518,7 @@ export default function App() {
             {page === 'aprobaciones' && <AprobacionesPage pendReqs={pendReqs} histReqs={histReqs} onResolve={resolve} />}
             {page === 'nuevo' && <NuevoProyectoPage onCreated={handleProjectCreated} />}
             {page === 'rip'   && <RIPPage projects={mergedProjects} />}
-            {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} />}
+            {page === 'detail' && <DetailView project={currentProj} onBack={closeDetail} onSubmitCR={submitCR} onUpdateProject={handleUpdateProject} onSaveBudgetPct={handleSaveBudgetPct} isAdmin={isAdmin} />}
           </>
         )}
       </main>
