@@ -204,8 +204,18 @@ export default function App() {
         }
       })
       .catch(err => {
-        console.error('Error cargando planilla:', err);
-        setXlsxError(err.message);
+        const msalCodes = ['timed_out', 'interaction_required', 'consent_required', 'access_denied', 'monitor_window_timeout', 'failed_to_redirect'];
+        const isMsalBlocked =
+          err?.name === 'BrowserAuthError' ||
+          err?.name === 'AuthError' ||
+          err?.name === 'InteractionRequiredAuthError' ||
+          msalCodes.some(code => err?.message?.includes(code) || err?.errorCode === code);
+        if (isMsalBlocked) {
+          console.warn('[SharePoint] Sin acceso (tenant policy) — usá importación manual de Excel:', err?.message);
+        } else {
+          console.error('Error cargando planilla:', err);
+          setXlsxError(err?.message);
+        }
       })
       .finally(() => setLoadingXlsx(false));
   }, [isAuthenticated, refreshKey]);

@@ -515,8 +515,8 @@ async function ensureRIPSheet(driveId, itemId) {
     { name: RIP_SHEET }
   );
   await graphPatch(
-    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${RIP_SHEET}')/range(address='A1:E1')`,
-    { values: [['Fecha', 'Proyecto', 'Objetivo', 'Estado', 'Comentarios']] }
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${RIP_SHEET}')/range(address='A1:F1')`,
+    { values: [['Fecha', 'Proyecto', 'Objetivo', 'Estado', 'Comentarios', 'Cliente']] }
   );
 }
 
@@ -529,6 +529,7 @@ function parseRIPRows(rows) {
       objetivo:    String(row[2] ?? '').trim(),
       estado:      String(row[3] ?? '').trim() || 'Pendiente',
       comentarios: String(row[4] ?? '').trim(),
+      cliente:     String(row[5] ?? '').trim(),
       _rowIdx:     i + 2,
     }))
     .filter(r => r.fecha && r.objetivo);
@@ -554,9 +555,9 @@ export async function saveRIPMeeting(entries) {
   );
   const startRow = range.rowCount + 1;
   const endRow   = startRow + entries.length - 1;
-  const values   = entries.map(e => [e.fecha, e.proyecto, e.objetivo, 'Pendiente', '']);
+  const values   = entries.map(e => [e.fecha, e.proyecto, e.objetivo, 'Pendiente', '', e.cliente ?? '']);
   await graphPatch(
-    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/range(address='A${startRow}:E${endRow}')`,
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/range(address='A${startRow}:F${endRow}')`,
     { values }
   );
 }

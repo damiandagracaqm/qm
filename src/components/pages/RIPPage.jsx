@@ -47,7 +47,7 @@ function groupEntriesByCliente(entries, projectMap) {
   entries.forEach(e => {
     const cliente = e.proyecto === 'GENERAL'
       ? 'General'
-      : (projectMap[e.proyecto]?.cliente?.trim() || 'Sin cliente');
+      : (e.cliente?.trim() || projectMap[e.proyecto]?.cliente?.trim() || 'Sin cliente');
     if (!map.has(cliente)) map.set(cliente, []);
     map.get(cliente).push(e);
   });
@@ -73,23 +73,38 @@ function StatusBadge({ estado }) {
   );
 }
 
-function ClientSection({ cliente, colorIdx, children }) {
+function ClientSection({ cliente, colorIdx, children, defaultOpen = true, count }) {
+  const [open, setOpen] = useState(defaultOpen);
   const color = CLIENT_COLORS[colorIdx % CLIENT_COLORS.length];
   const soft  = CLIENT_SOFT[colorIdx % CLIENT_SOFT.length];
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 12px', borderRadius: 6, marginBottom: 10,
-        background: soft, borderLeft: `3px solid ${color}`,
-      }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+    <div style={{ marginBottom: 12 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 12px', borderRadius: 6, marginBottom: open ? 10 : 0,
+          background: soft, border: 'none', borderLeft: `3px solid ${color}`,
+          cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{
+          fontSize: 9, color, flexShrink: 0,
+          display: 'inline-block', transition: 'transform 0.15s',
+          transform: open ? 'rotate(90deg)' : 'none',
+        }}>▶</span>
+        <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color, letterSpacing: 0.5, textTransform: 'uppercase' }}>
           {cliente}
         </span>
-      </div>
-      <div style={{ paddingLeft: 8 }}>
-        {children}
-      </div>
+        {count != null && (
+          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color, opacity: 0.7 }}>{count}</span>
+        )}
+      </button>
+      {open && (
+        <div style={{ paddingLeft: 8 }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -185,11 +200,11 @@ export function RIPPage({ projects }) {
     const toSave = [];
     activeProjects.forEach(p => {
       getObjs(p.id).forEach(obj => {
-        if (obj.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj.text.trim() });
+        if (obj.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj.text.trim(), cliente: p.cliente?.trim() || 'Sin cliente' });
       });
     });
     extras.forEach(ex => {
-      if (ex.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: 'GENERAL', objetivo: ex.text.trim() });
+      if (ex.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: 'GENERAL', objetivo: ex.text.trim(), cliente: 'General' });
     });
     if (!toSave.length) return;
     setSavingMeeting(true); setMeetingError(null);
@@ -197,7 +212,7 @@ export function RIPPage({ projects }) {
       if (useLocal) {
         const existing = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
         const base     = existing.length;
-        const newRows  = toSave.map((e, i) => ({ ...e, estado: 'Pendiente', comentarios: '', _localId: base + i }));
+        const newRows  = toSave.map((e, i) => ({ ...e, estado: 'Pendiente', comentarios: '', cliente: e.cliente ?? '', _localId: base + i }));
         const updated  = [...existing, ...newRows];
         localStorage.setItem(LS_KEY, JSON.stringify(updated));
         setEntries(updated);
@@ -309,7 +324,7 @@ export function RIPPage({ projects }) {
               </div>
               <div className="card-b">
                 {byCliente.map(([cliente, items], ci) => (
-                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci}>
+                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci} count={items.length}>
                     {items.map(e => {
                       const key = e._rowIdx ?? e._localId;
                       const rev = reviews[key] ?? {};
@@ -372,7 +387,7 @@ export function RIPPage({ projects }) {
                 <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos activos.</div>
               )}
               {clientGroups.map(([cliente, projs], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} count={projs.length}>
                   {projs.map(p => (
                     <div key={p.id} style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -444,7 +459,7 @@ export function RIPPage({ projects }) {
             </div>
             <div className="card-b">
               {groupEntriesByCliente(thisWeekEntries, projectMap).map(([cliente, items], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} count={items.length}>
                   {items.map(e => {
                     const key  = e._rowIdx ?? e._localId;
                     const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
@@ -537,7 +552,7 @@ export function RIPPage({ projects }) {
                       transition: 'background 0.15s',
                     }}>
                     <span style={{ fontSize: 10, color: 'var(--ink-3)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>Semana del {fmtWeek(fecha)}</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>Reunión del {fmtWeek(fecha)}</span>
                     {pend > 0 ? (
                       <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', padding: '2px 10px', borderRadius: 20, background: '#fde68a', color: '#92400e', fontWeight: 700 }}>
                         {pend} sin revisar
@@ -555,7 +570,7 @@ export function RIPPage({ projects }) {
                   {isOpen && (
                     <div style={{ padding: '4px 20px 16px' }}>
                       {byCliente.map(([cliente, centries], ci) => (
-                        <ClientSection key={cliente} cliente={cliente} colorIdx={ci}>
+                        <ClientSection key={cliente} cliente={cliente} colorIdx={ci} defaultOpen={false} count={centries.length}>
                           {centries.map((e, i) => (
                             <div key={i} style={{
                               display: 'flex', alignItems: 'flex-start', gap: 10,
