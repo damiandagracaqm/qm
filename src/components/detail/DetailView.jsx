@@ -3,6 +3,7 @@ import { AREAS, ESTADIOS, ESTADO_A_PASO } from '../../data/areas';
 import { StatusTag, DesvioTag } from '../common/StatusTag';
 import { AreaBars } from '../common/AreaBars';
 import { GanttChart } from './GanttChart';
+import { ProgressRings } from './ProgressRings';
 
 function PencilIcon() {
   return (
@@ -196,6 +197,14 @@ export function DetailView({ project, onBack, onSubmitCR, onUpdateProject, onSav
             <span key={e} className={`flow-step ${isFinished || i < si ? 'done' : i === si ? 'active' : ''}`}>{e}</span>
           ))}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="card-h">
+          <span className="card-t">Avance del proceso productivo</span>
+          <span className="card-sub">HH reales / HH planificadas por etapa</span>
+        </div>
+        <ProgressRings hhPlan={p.hhPlan} hhReal={p.hhReal} />
       </div>
 
       <div className="grid-2">
