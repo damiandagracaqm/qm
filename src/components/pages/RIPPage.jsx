@@ -10,21 +10,35 @@ const CLIENT_SOFT   = [
   'rgba(255,128,29,0.07)','rgba(124,58,237,0.07)','rgba(225,29,72,0.07)','rgba(8,145,178,0.07)',
 ];
 
+function toLocalISO(date) {
+  const y  = date.getFullYear();
+  const m  = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 function getMondayStr(d = new Date()) {
   const date = new Date(d);
-  const day = date.getDay();
+  const day  = date.getDay();
   date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
-  return date.toISOString().split('T')[0];
+  return toLocalISO(date);
 }
 function prevMondayStr(s) {
   const d = new Date(s + 'T12:00:00');
   d.setDate(d.getDate() - 7);
-  return d.toISOString().split('T')[0];
+  return toLocalISO(d);
 }
 function fmtWeek(isoStr) {
   if (!isoStr) return '';
-  const [y, m, dd] = isoStr.split('-').map(Number);
-  return new Date(y, m - 1, dd).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const str = String(isoStr).trim();
+  // Extraer YYYY-MM-DD aunque venga con timestamp
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!isNaN(d)) return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  const d = new Date(str);
+  if (!isNaN(d)) return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return str;
 }
 function groupByFecha(entries) {
   const map = new Map();
@@ -330,7 +344,7 @@ export function RIPPage({ projects }) {
         )}
 
         {/* ── Revisión semana anterior (solo lunes) ── */}
-        {isMonday && pendingReview.length > 0 && !reviewSaved && (() => {
+        {pendingReview.length > 0 && !reviewSaved && (() => {
           const byCliente = groupEntriesByCliente(pendingReview, projectMap);
           return (
             <div className="card">
