@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { fetchRIP, saveRIPMeeting, updateRIPEntry } from '../../services/graphService';
 
-const LS_KEY = 'gqm_rip';
+const LS_KEY     = 'gqm_rip';
+const LS_LDP_KEY = 'gqm_rip_ldp';
 
 const CLIENT_COLORS = ['#10069F','#ef5c43','#009bd9','#00A440','#ff801d','#7c3aed','#e11d48','#0891b2'];
 const CLIENT_SOFT   = [
@@ -145,8 +146,23 @@ export function RIPPage({ projects }) {
   const [weekError,   setWeekError]   = useState(null);
   const [weekSavedAt, setWeekSavedAt] = useState(null);
 
+  // --- LDP por semana ---
+  const [ldpByWeek,    setLdpByWeekState] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_LDP_KEY) ?? '{}'); }
+    catch { return {}; }
+  });
+  const [editingLdpWeek, setEditingLdpWeek] = useState(null);
+
   // --- historial ---
   const [openWeeks, setOpenWeeks] = useState(new Set());
+
+  function setWeekLdp(mondayStr, value) {
+    const updated = { ...ldpByWeek, [mondayStr]: value };
+    setLdpByWeekState(updated);
+    localStorage.setItem(LS_LDP_KEY, JSON.stringify(updated));
+  }
+
+  const ldpOptions = [...new Set(activeProjects.map(p => p.ldp).filter(Boolean))].sort();
 
   async function loadEntries() {
     setLoading(true);
@@ -324,7 +340,7 @@ export function RIPPage({ projects }) {
               </div>
               <div className="card-b">
                 {byCliente.map(([cliente, items], ci) => (
-                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci} count={items.length}>
+                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci} defaultOpen={false} count={items.length}>
                     {items.map(e => {
                       const key = e._rowIdx ?? e._localId;
                       const rev = reviews[key] ?? {};
@@ -383,11 +399,29 @@ export function RIPPage({ projects }) {
               <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
             </div>
             <div className="card-b">
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+                padding: '10px 14px', borderRadius: 8,
+                background: 'oklch(0.975 0.002 250)', border: '1px solid oklch(0.91 0.005 250)',
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>Responsable RIP</span>
+                <input
+                  list="ldp-list"
+                  className="input"
+                  value={ldpByWeek[thisMonday] ?? ''}
+                  onChange={e => setWeekLdp(thisMonday, e.target.value)}
+                  placeholder="Asignar responsable…"
+                  style={{ flex: 1, fontSize: 12 }}
+                />
+                <datalist id="ldp-list">
+                  {ldpOptions.map(l => <option key={l} value={l} />)}
+                </datalist>
+              </div>
               {clientGroups.length === 0 && (
                 <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos activos.</div>
               )}
               {clientGroups.map(([cliente, projs], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} count={projs.length}>
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} defaultOpen={false} count={projs.length}>
                   {projs.map(p => (
                     <div key={p.id} style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -420,7 +454,7 @@ export function RIPPage({ projects }) {
 
               {/* GENERAL */}
               {(extras.length > 0 || clientGroups.length > 0) && (
-                <ClientSection cliente="General" colorIdx={clientGroups.length}>
+                <ClientSection cliente="General" colorIdx={clientGroups.length} defaultOpen={false}>
                   {extras.map((ex, i) => (
                     <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
@@ -456,10 +490,40 @@ export function RIPPage({ projects }) {
             <div className="card-h">
               <span className="card-t">Esta semana</span>
               <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {editingLdpWeek === thisMonday ? (
+                  <>
+                    <input
+                      list="ldp-list-edit"
+                      className="input"
+                      autoFocus
+                      value={ldpByWeek[thisMonday] ?? ''}
+                      onChange={e => setWeekLdp(thisMonday, e.target.value)}
+                      onBlur={() => setEditingLdpWeek(null)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingLdpWeek(null); }}
+                      style={{ fontSize: 11, padding: '3px 8px', width: 160 }}
+                    />
+                    <datalist id="ldp-list-edit">
+                      {ldpOptions.map(l => <option key={l} value={l} />)}
+                    </datalist>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 12, color: ldpByWeek[thisMonday] ? 'var(--ink-2)' : 'var(--ink-3)', fontWeight: ldpByWeek[thisMonday] ? 500 : 400 }}>
+                      {ldpByWeek[thisMonday] || 'Sin responsable'}
+                    </span>
+                    <button
+                      onClick={() => setEditingLdpWeek(thisMonday)}
+                      title="Editar responsable"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 12, padding: '2px 4px', lineHeight: 1 }}
+                    >✏</button>
+                  </>
+                )}
+              </div>
             </div>
             <div className="card-b">
               {groupEntriesByCliente(thisWeekEntries, projectMap).map(([cliente, items], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} count={items.length}>
+                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} defaultOpen={false} count={items.length}>
                   {items.map(e => {
                     const key  = e._rowIdx ?? e._localId;
                     const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
@@ -553,6 +617,11 @@ export function RIPPage({ projects }) {
                     }}>
                     <span style={{ fontSize: 10, color: 'var(--ink-3)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>Reunión del {fmtWeek(fecha)}</span>
+                    {ldpByWeek[fecha] && (
+                      <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', marginRight: 4 }}>
+                        {ldpByWeek[fecha]}
+                      </span>
+                    )}
                     {pend > 0 ? (
                       <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', padding: '2px 10px', borderRadius: 20, background: '#fde68a', color: '#92400e', fontWeight: 700 }}>
                         {pend} sin revisar
