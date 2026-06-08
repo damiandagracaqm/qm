@@ -570,6 +570,14 @@ export async function updateRIPEntry(rowIdx, estado, comentarios) {
   );
 }
 
+export async function updateRIPEntryFecha(rowIdx, fecha) {
+  const { driveId, itemId } = await resolveDriveItem();
+  await graphPatch(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(RIP_SHEET)}')/range(address='A${rowIdx}:A${rowIdx}')`,
+    { values: [[fecha]] }
+  );
+}
+
 export async function updateBudgetPct(rowIdx, colIdx, pct) {
   const { driveId, itemId } = await resolveDriveItem();
   const cellAddr = `${colToLetter(colIdx)}${rowIdx + 1}`;

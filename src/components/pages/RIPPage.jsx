@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchRIP, saveRIPMeeting, updateRIPEntry } from '../../services/graphService';
+import { fetchRIP, saveRIPMeeting, updateRIPEntry, updateRIPEntryFecha } from '../../services/graphService';
 
 const LS_KEY     = 'gqm_rip';
 const LS_LDP_KEY = 'gqm_rip_ldp';
@@ -9,6 +9,10 @@ const CLIENT_SOFT   = [
   'rgba(16,6,159,0.07)','rgba(239,92,67,0.07)','rgba(0,155,217,0.07)','rgba(0,164,64,0.07)',
   'rgba(255,128,29,0.07)','rgba(124,58,237,0.07)','rgba(225,29,72,0.07)','rgba(8,145,178,0.07)',
 ];
+const SECTION_LABEL = {
+  fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: 'var(--ink-3)',
+  textTransform: 'uppercase', marginBottom: 8,
+};
 
 function toLocalISO(date) {
   const y  = date.getFullYear();
@@ -25,6 +29,11 @@ function getMondayStr(d = new Date()) {
 function prevMondayStr(s) {
   const d = new Date(s + 'T12:00:00');
   d.setDate(d.getDate() - 7);
+  return toLocalISO(d);
+}
+function addDaysStr(s, days) {
+  const d = new Date(s + 'T12:00:00');
+  d.setDate(d.getDate() + days);
   return toLocalISO(d);
 }
 function fmtWeek(isoStr) {
@@ -124,10 +133,57 @@ function ClientSection({ cliente, colorIdx, children, defaultOpen = true, count 
   );
 }
 
+function EditableObjectiveRow({ proyecto, objetivo, estado, comentarios, onEstado, onComentario, extra }) {
+  const done = estado === 'Hecho';
+  const nope = estado === 'No hecho';
+  return (
+    <div style={{
+      marginBottom: 10, padding: '10px 14px', borderRadius: 8,
+      background: done ? 'rgba(0,164,64,0.06)' : nope ? 'rgba(239,92,67,0.06)' : 'oklch(0.975 0.002 250)',
+      border: `1px solid ${done ? 'rgba(0,164,64,0.2)' : nope ? 'rgba(239,92,67,0.2)' : 'oklch(0.91 0.005 250)'}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{proyecto}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--ink-3)' : 'var(--ink)' }}>
+            {objetivo}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {['Hecho', 'No hecho', 'Pendiente'].map(opt => (
+            <button key={opt} onClick={() => onEstado(opt)}
+              style={{
+                padding: '4px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                cursor: 'pointer', border: '2px solid',
+                borderColor: estado === opt
+                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#d97706')
+                  : 'oklch(0.85 0.01 250)',
+                background: estado === opt
+                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#fde68a')
+                  : 'transparent',
+                color: estado === opt
+                  ? (opt === 'Pendiente' ? '#92400e' : '#fff')
+                  : 'var(--ink-2)',
+                transition: 'all 0.15s',
+              }}>{opt === 'Hecho' ? '✓ Hecho' : opt === 'No hecho' ? '✗ No hecho' : '○ Pendiente'}</button>
+          ))}
+        </div>
+      </div>
+      <input className="input" placeholder="Comentario (opcional)"
+        value={comentarios ?? ''}
+        onChange={ev => onComentario(ev.target.value)}
+        style={{ fontSize: 12 }}
+      />
+      {extra && <div style={{ marginTop: 8 }}>{extra}</div>}
+    </div>
+  );
+}
+
 export function RIPPage({ projects }) {
   const today      = new Date();
   const thisMonday = getMondayStr(today);
   const lastMonday = prevMondayStr(thisMonday);
+  const nextMonday = addDaysStr(thisMonday, 7);
 
   const activeProjects = projects.filter(p =>
     p.estado && p.estado !== 'Entregado' && p.estado !== 'Cancelado'
@@ -141,23 +197,23 @@ export function RIPPage({ projects }) {
   const [loading,   setLoading]   = useState(true);
   const [useLocal,  setUseLocal]  = useState(false);
 
-  // --- form planificación: { [pid]: [{ id, text }] } ---
-  const [objectives,    setObjectives]    = useState({});
-  const [extras,        setExtras]        = useState([]);
-  const [savingMeeting, setSavingMeeting] = useState(false);
-  const [meetingError,  setMeetingError]  = useState(null);
+  // --- objetivos nuevos para esta semana: { [pid]: [{ id, text }] } ---
+  const [objectives, setObjectives] = useState({});
+  const [extras,     setExtras]     = useState([]);
 
-  // --- revisión semana anterior ---
-  const [reviews,       setReviews]       = useState({});
-  const [savingReview,  setSavingReview]  = useState(false);
-  const [reviewError,   setReviewError]   = useState(null);
-  const [reviewSavedAt, setReviewSavedAt] = useState(null);
+  // --- ediciones de estado/comentario (semana pasada y esta semana) ---
+  const [reviews,   setReviews]   = useState({});
+  const [weekEdits, setWeekEdits] = useState({});
 
-  // --- edición semana actual ---
-  const [weekEdits,   setWeekEdits]   = useState({});
-  const [savingWeek,  setSavingWeek]  = useState(false);
-  const [weekError,   setWeekError]   = useState(null);
-  const [weekSavedAt, setWeekSavedAt] = useState(null);
+  // --- guardado ---
+  const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [savedAt,   setSavedAt]   = useState(null);
+
+  // --- mover objetivo de la semana pasada a otra fecha ---
+  const [moveDrafts, setMoveDrafts] = useState({});
+  const [movingKey,  setMovingKey]  = useState(null);
+  const [moveError,  setMoveError]  = useState(null);
 
   // --- LDP por semana ---
   const [ldpByWeek,    setLdpByWeekState] = useState(() => {
@@ -197,24 +253,25 @@ export function RIPPage({ projects }) {
   const grouped         = groupByFecha(entries);
   const thisWeekEntries = entries.filter(e => e.fecha === thisMonday);
   const lastWeekEntries = entries.filter(e => e.fecha === lastMonday);
-  const hasThisWeek     = entries.some(e => e.fecha === thisMonday);
 
-  // inicializar revisiones (precargadas con el estado/comentario actual, editables en cualquier momento)
+  // sembrar ediciones para entradas nuevas sin pisar las que el usuario ya está editando
   useEffect(() => {
-    const init = {};
-    lastWeekEntries.forEach(e => { init[e._rowIdx ?? e._localId] = { estado: e.estado, comentarios: e.comentarios }; });
-    setReviews(init);
-    setReviewSavedAt(null);
-  }, [entries]);
-
-  // inicializar edits semana actual
-  useEffect(() => {
-    const init = {};
-    entries.filter(e => e.fecha === thisMonday).forEach(e => {
-      init[e._rowIdx ?? e._localId] = { estado: e.estado, comentarios: e.comentarios };
+    setReviews(prev => {
+      const next = { ...prev };
+      lastWeekEntries.forEach(e => {
+        const key = e._rowIdx ?? e._localId;
+        if (!(key in next)) next[key] = { estado: e.estado, comentarios: e.comentarios };
+      });
+      return next;
     });
-    setWeekEdits(init);
-    setWeekSavedAt(null);
+    setWeekEdits(prev => {
+      const next = { ...prev };
+      thisWeekEntries.forEach(e => {
+        const key = e._rowIdx ?? e._localId;
+        if (!(key in next)) next[key] = { estado: e.estado, comentarios: e.comentarios };
+      });
+      return next;
+    });
   }, [entries]);
 
   // helpers objectives
@@ -224,99 +281,140 @@ export function RIPPage({ projects }) {
   function updObj(pid, id, text) { setObjs(pid, arr => arr.map(o => o.id === id ? { ...o, text } : o)); }
   function remObj(pid, id) { setObjs(pid, arr => arr.length > 1 ? arr.filter(o => o.id !== id) : arr); }
 
-  // guardar reunión nueva
-  async function handleSaveMeeting() {
-    const toSave = [];
-    activeProjects.forEach(p => {
-      getObjs(p.id).forEach(obj => {
-        if (obj.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj.text.trim(), cliente: p.cliente?.trim() || 'Sin cliente' });
-      });
-    });
-    extras.forEach(ex => {
-      if (ex.text?.trim()) toSave.push({ fecha: thisMonday, proyecto: 'GENERAL', objetivo: ex.text.trim(), cliente: 'General' });
-    });
-    if (!toSave.length) return;
-    setSavingMeeting(true); setMeetingError(null);
+  // guardar todo: objetivos nuevos + ediciones de semana pasada y actual
+  async function handleSave() {
+    setSaving(true); setSaveError(null);
     try {
-      if (useLocal) {
-        const existing = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-        const base     = existing.length;
-        const newRows  = toSave.map((e, i) => ({ ...e, estado: 'Pendiente', comentarios: '', cliente: e.cliente ?? '', _localId: base + i }));
-        const updated  = [...existing, ...newRows];
-        localStorage.setItem(LS_KEY, JSON.stringify(updated));
-        setEntries(updated);
-      } else {
-        await saveRIPMeeting(toSave);
-        await loadEntries();
-      }
-      setObjectives({}); setExtras([]);
-    } catch (err) { setMeetingError(err.message); }
-    finally { setSavingMeeting(false); }
-  }
+      const toCreate = [];
+      activeProjects.forEach(p => {
+        getObjs(p.id).forEach(obj => {
+          if (obj.text?.trim()) toCreate.push({ fecha: thisMonday, proyecto: p.id, objetivo: obj.text.trim(), cliente: p.cliente?.trim() || 'Sin cliente' });
+        });
+      });
+      extras.forEach(ex => {
+        if (ex.text?.trim()) toCreate.push({ fecha: thisMonday, proyecto: 'GENERAL', objetivo: ex.text.trim(), cliente: 'General' });
+      });
 
-  // guardar revisión semana anterior
-  async function handleSaveReview() {
-    setSavingReview(true); setReviewError(null);
-    try {
-      const updates = lastWeekEntries.map(e => {
-        const key = e._rowIdx ?? e._localId;
-        const r   = reviews[key] ?? {};
-        return { entry: e, estado: r.estado || e.estado, comentarios: r.comentarios ?? e.comentarios ?? '' };
-      });
+      const toUpdate = [
+        ...lastWeekEntries.map(e => ({ entry: e, edit: reviews[e._rowIdx ?? e._localId] })),
+        ...thisWeekEntries.map(e => ({ entry: e, edit: weekEdits[e._rowIdx ?? e._localId] })),
+      ].map(({ entry, edit }) => ({
+        entry,
+        estado:      edit?.estado || entry.estado,
+        comentarios: edit?.comentarios ?? entry.comentarios ?? '',
+      }));
+
       if (useLocal) {
-        const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-        updates.forEach(({ entry, estado, comentarios }) => {
-          const idx = stored.findIndex(e => e._localId === entry._localId);
+        let stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
+        if (toCreate.length) {
+          const base    = stored.length;
+          const newRows = toCreate.map((e, i) => ({ ...e, estado: 'Pendiente', comentarios: '', cliente: e.cliente ?? '', _localId: base + i }));
+          stored = [...stored, ...newRows];
+        }
+        toUpdate.forEach(({ entry, estado, comentarios }) => {
+          const idx = stored.findIndex(s => s._localId === entry._localId);
           if (idx !== -1) { stored[idx].estado = estado; stored[idx].comentarios = comentarios; }
         });
         localStorage.setItem(LS_KEY, JSON.stringify(stored));
         setEntries(stored);
       } else {
-        await Promise.all(updates.map(({ entry, estado, comentarios }) =>
+        if (toCreate.length) await saveRIPMeeting(toCreate);
+        await Promise.all(toUpdate.map(({ entry, estado, comentarios }) =>
           updateRIPEntry(entry._rowIdx, estado, comentarios)
         ));
         await loadEntries();
       }
-      setReviewSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
-    } catch (err) { setReviewError(err.message); }
-    finally { setSavingReview(false); }
+      setObjectives({}); setExtras([]);
+      setSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
+    } catch (err) { setSaveError(err.message); }
+    finally { setSaving(false); }
   }
 
-  // guardar ediciones semana actual
-  async function handleSaveWeek() {
-    const currentWeek = entries.filter(e => e.fecha === thisMonday);
-    setSavingWeek(true); setWeekError(null);
+  // mover un objetivo de la semana pasada a otra fecha (cambia su semana)
+  async function handleMove(entry) {
+    const key   = entry._rowIdx ?? entry._localId;
+    const draft = moveDrafts[key];
+    if (!draft) return;
+    const targetMonday = getMondayStr(new Date(draft + 'T12:00:00'));
+    setMovingKey(key); setMoveError(null);
     try {
       if (useLocal) {
         const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-        currentWeek.forEach(e => {
-          const key = e._localId;
-          const edit = weekEdits[key];
-          if (!edit) return;
-          const idx = stored.findIndex(s => s._localId === key);
-          if (idx !== -1) { stored[idx].estado = edit.estado; stored[idx].comentarios = edit.comentarios; }
-        });
+        const idx = stored.findIndex(s => s._localId === entry._localId);
+        if (idx !== -1) stored[idx].fecha = targetMonday;
         localStorage.setItem(LS_KEY, JSON.stringify(stored));
         setEntries(stored);
       } else {
-        await Promise.all(currentWeek.map(e => {
-          const edit = weekEdits[e._rowIdx];
-          if (!edit) return Promise.resolve();
-          return updateRIPEntry(e._rowIdx, edit.estado, edit.comentarios);
-        }));
+        await updateRIPEntryFecha(entry._rowIdx, targetMonday);
         await loadEntries();
       }
-      setWeekSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
-    } catch (err) { setWeekError(err.message); }
-    finally { setSavingWeek(false); }
+      setMoveDrafts(d => { const n = { ...d }; delete n[key]; return n; });
+    } catch (err) { setMoveError(err.message); }
+    finally { setMovingKey(null); }
   }
 
   function toggleWeek(fecha) {
     setOpenWeeks(prev => { const n = new Set(prev); n.has(fecha) ? n.delete(fecha) : n.add(fecha); return n; });
   }
 
-  const hasAnyObjective = activeProjects.some(p => getObjs(p.id).some(o => o.text?.trim())) ||
-                          extras.some(e => e.text?.trim());
+  function renderMoveControl(entry, key) {
+    const draft = moveDrafts[key];
+    if (draft == null) {
+      return (
+        <button onClick={() => setMoveDrafts(d => ({ ...d, [key]: nextMonday }))}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 11, padding: 0 }}>
+          ↪ mover a otra semana
+        </button>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <input type="date" className="input" value={draft}
+          onChange={ev => setMoveDrafts(d => ({ ...d, [key]: ev.target.value }))}
+          style={{ fontSize: 11, padding: '3px 8px', width: 150 }}
+        />
+        <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+          → semana del {fmtWeek(getMondayStr(new Date(draft + 'T12:00:00')))}
+        </span>
+        <button className="btn btn-accent" disabled={movingKey === key}
+          onClick={() => handleMove(entry)}
+          style={{ fontSize: 11, padding: '3px 12px' }}>
+          {movingKey === key ? 'Moviendo…' : 'Mover'}
+        </button>
+        <button onClick={() => setMoveDrafts(d => { const n = { ...d }; delete n[key]; return n; })}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 11 }}>
+          Cancelar
+        </button>
+      </div>
+    );
+  }
+
+  function renderLastWeekRow(e) {
+    const key = e._rowIdx ?? e._localId;
+    const rev = reviews[key] ?? { estado: e.estado, comentarios: e.comentarios };
+    return (
+      <EditableObjectiveRow key={key}
+        proyecto={e.proyecto} objetivo={e.objetivo}
+        estado={rev.estado} comentarios={rev.comentarios}
+        onEstado={opt => setReviews(r => ({ ...r, [key]: { ...r[key], estado: opt } }))}
+        onComentario={val => setReviews(r => ({ ...r, [key]: { ...r[key], comentarios: val } }))}
+        extra={renderMoveControl(e, key)}
+      />
+    );
+  }
+
+  function renderThisWeekRow(e) {
+    const key  = e._rowIdx ?? e._localId;
+    const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
+    return (
+      <EditableObjectiveRow key={key}
+        proyecto={e.proyecto} objetivo={e.objetivo}
+        estado={edit.estado} comentarios={edit.comentarios}
+        onEstado={opt => setWeekEdits(w => ({ ...w, [key]: { ...w[key], estado: opt } }))}
+        onComentario={val => setWeekEdits(w => ({ ...w, [key]: { ...w[key], comentarios: val } }))}
+      />
+    );
+  }
 
   if (loading) return (
     <div className="page-body">
@@ -326,7 +424,20 @@ export function RIPPage({ projects }) {
     </div>
   );
 
-  const historyWeeks = grouped.filter(([fecha]) => fecha !== thisMonday);
+  const lastWeekByCliente = new Map(groupEntriesByCliente(lastWeekEntries.filter(e => e.proyecto !== 'GENERAL'), projectMap));
+  const thisWeekByCliente = new Map(groupEntriesByCliente(thisWeekEntries.filter(e => e.proyecto !== 'GENERAL'), projectMap));
+  const lastWeekGeneral   = lastWeekEntries.filter(e => e.proyecto === 'GENERAL');
+  const thisWeekGeneral   = thisWeekEntries.filter(e => e.proyecto === 'GENERAL');
+
+  const clientNames = [...new Set([
+    ...clientGroups.map(([c]) => c),
+    ...lastWeekByCliente.keys(),
+    ...thisWeekByCliente.keys(),
+  ])].sort((a, b) => a.localeCompare(b, 'es'));
+
+  const hasGeneral = clientNames.length > 0 || extras.length > 0 || lastWeekGeneral.length > 0 || thisWeekGeneral.length > 0;
+
+  const historyWeeks = grouped.filter(([fecha]) => fecha !== thisMonday && fecha !== lastMonday);
 
   return (
     <div className="page-body">
@@ -342,141 +453,115 @@ export function RIPPage({ projects }) {
           </div>
         )}
 
-        {/* ── Revisión semana anterior (editable en cualquier momento) ── */}
-        {lastWeekEntries.length > 0 && (() => {
-          const byCliente = groupEntriesByCliente(lastWeekEntries, projectMap);
-          return (
-            <div className="card">
-              <div className="card-h" style={{ background: 'oklch(0.97 0.01 250)', borderRadius: '10px 10px 0 0', margin: '-1px -1px 0', padding: '14px 20px' }}>
-                <span className="card-t">Revisar semana anterior</span>
-                <span className="card-sub">Semana del {fmtWeek(lastMonday)}</span>
-              </div>
-              <div className="card-b">
-                {byCliente.map(([cliente, items], ci) => (
-                  <ClientSection key={cliente} cliente={cliente} colorIdx={clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci} defaultOpen={false} count={items.length}>
-                    {items.map(e => {
-                      const key = e._rowIdx ?? e._localId;
-                      const rev = reviews[key] ?? {};
+        {/* ── Reunión semanal: semana pasada + esta semana, todo junto por cliente ── */}
+        <div className="card">
+          <div className="card-h">
+            <span className="card-t">Reunión semanal</span>
+            <span className="card-sub">Pasada: {fmtWeek(lastMonday)} · Actual: {fmtWeek(thisMonday)}</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>Responsable</span>
+              {editingLdpWeek === thisMonday ? (
+                <>
+                  <input
+                    list="ldp-list-edit"
+                    className="input"
+                    autoFocus
+                    value={ldpByWeek[thisMonday] ?? ''}
+                    onChange={e => setWeekLdp(thisMonday, e.target.value)}
+                    onBlur={() => setEditingLdpWeek(null)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingLdpWeek(null); }}
+                    style={{ fontSize: 11, padding: '3px 8px', width: 160 }}
+                  />
+                  <datalist id="ldp-list-edit">
+                    {ldpOptions.map(l => <option key={l} value={l} />)}
+                  </datalist>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 12, color: ldpByWeek[thisMonday] ? 'var(--ink-2)' : 'var(--ink-3)', fontWeight: ldpByWeek[thisMonday] ? 500 : 400 }}>
+                    {ldpByWeek[thisMonday] || 'Sin responsable'}
+                  </span>
+                  <button
+                    onClick={() => setEditingLdpWeek(thisMonday)}
+                    title="Editar responsable"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 12, padding: '2px 4px', lineHeight: 1 }}
+                  >✏</button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="card-b">
+            {clientNames.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>No hay proyectos activos.</div>
+            )}
+
+            {clientNames.map((cliente, ci) => {
+              const projs          = clientGroups.find(([c]) => c === cliente)?.[1] ?? [];
+              const lastWeekItems  = lastWeekByCliente.get(cliente) ?? [];
+              const thisWeekItems  = thisWeekByCliente.get(cliente) ?? [];
+              const projIds        = new Set(projs.map(p => p.id));
+              const orphanItems    = thisWeekItems.filter(e => !projIds.has(e.proyecto));
+              const colorIdx       = clientIndexOf(cliente) >= 0 ? clientIndexOf(cliente) : ci;
+              return (
+                <ClientSection key={cliente} cliente={cliente} colorIdx={colorIdx} defaultOpen={false}
+                  count={(lastWeekItems.length + thisWeekItems.length) || null}>
+                  {lastWeekItems.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={SECTION_LABEL}>Semana pasada · {fmtWeek(lastMonday)}</div>
+                      {lastWeekItems.map(renderLastWeekRow)}
+                    </div>
+                  )}
+                  <div>
+                    <div style={SECTION_LABEL}>Esta semana · {fmtWeek(thisMonday)}</div>
+                    {projs.map(p => {
+                      const existing = thisWeekItems.filter(e => e.proyecto === p.id);
                       return (
-                        <div key={key} style={{
-                          marginBottom: 10, padding: '10px 14px', borderRadius: 8,
-                          background: 'oklch(0.975 0.002 250)', border: '1px solid oklch(0.91 0.005 250)',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{e.proyecto}</span>
-                              <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                              {['Hecho', 'No hecho', 'Pendiente'].map(opt => (
-                                <button key={opt} onClick={() => setReviews(r => ({ ...r, [key]: { ...r[key], estado: opt } }))}
-                                  style={{
-                                    padding: '4px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                                    cursor: 'pointer', border: '2px solid',
-                                    borderColor: rev.estado === opt
-                                      ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#d97706')
-                                      : 'oklch(0.85 0.01 250)',
-                                    background: rev.estado === opt
-                                      ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#fde68a')
-                                      : 'transparent',
-                                    color: rev.estado === opt
-                                      ? (opt === 'Pendiente' ? '#92400e' : '#fff')
-                                      : 'var(--ink-2)',
-                                    transition: 'all 0.15s',
-                                  }}>{opt === 'Hecho' ? '✓ Hecho' : opt === 'No hecho' ? '✗ No hecho' : '○ Pendiente'}</button>
-                              ))}
-                            </div>
+                        <div key={p.id} style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{p.id}</span>
+                            {p.desc && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>— {p.desc}</span>}
                           </div>
-                          <input className="input" placeholder="Comentario (opcional)"
-                            value={rev.comentarios ?? ''}
-                            onChange={ev => setReviews(r => ({ ...r, [key]: { ...r[key], comentarios: ev.target.value } }))}
-                            style={{ fontSize: 12 }}
-                          />
+                          {existing.map(renderThisWeekRow)}
+                          {getObjs(p.id).map(obj => (
+                            <div key={obj.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                              <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
+                              <input className="input"
+                                placeholder="Objetivo nuevo"
+                                value={obj.text}
+                                onChange={e => updObj(p.id, obj.id, e.target.value)}
+                                style={{ flex: 1, fontSize: 12 }}
+                              />
+                              {getObjs(p.id).length > 1 && (
+                                <button onClick={() => remObj(p.id, obj.id)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, padding: '0 2px', lineHeight: 1 }}>×</button>
+                              )}
+                            </div>
+                          ))}
+                          <button onClick={() => addObj(p.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', paddingLeft: 22, marginTop: 2 }}>
+                            + agregar objetivo
+                          </button>
                         </div>
                       );
                     })}
-                  </ClientSection>
-                ))}
-                {reviewError && (
-                  <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{reviewError}</div>
-                )}
-                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
-                  {reviewSavedAt && (
-                    <span style={{ fontSize: 11, color: '#00A440', fontFamily: 'var(--font-mono)' }}>✓ Guardado {reviewSavedAt}</span>
-                  )}
-                  <button className="btn btn-accent" onClick={handleSaveReview} disabled={savingReview}>
-                    {savingReview ? 'Guardando…' : 'Guardar revisión'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ── Planificación o resumen semana actual ── */}
-        {!hasThisWeek ? (
-          <div className="card">
-            <div className="card-h">
-              <span className="card-t">Planificar esta semana</span>
-              <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
-            </div>
-            <div className="card-b">
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
-                padding: '10px 14px', borderRadius: 8,
-                background: 'oklch(0.975 0.002 250)', border: '1px solid oklch(0.91 0.005 250)',
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>Responsable RIP</span>
-                <input
-                  list="ldp-list"
-                  className="input"
-                  value={ldpByWeek[thisMonday] ?? ''}
-                  onChange={e => setWeekLdp(thisMonday, e.target.value)}
-                  placeholder="Asignar responsable…"
-                  style={{ flex: 1, fontSize: 12 }}
-                />
-                <datalist id="ldp-list">
-                  {ldpOptions.map(l => <option key={l} value={l} />)}
-                </datalist>
-              </div>
-              {clientGroups.length === 0 && (
-                <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>No hay proyectos activos.</div>
-              )}
-              {clientGroups.map(([cliente, projs], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} defaultOpen={false} count={projs.length}>
-                  {projs.map(p => (
-                    <div key={p.id} style={{ marginBottom: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{p.id}</span>
-                        {p.desc && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>— {p.desc}</span>}
-                      </div>
-                      {getObjs(p.id).map((obj, oi) => (
-                        <div key={obj.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                          <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
-                          <input className="input"
-                            placeholder="Objetivo de la semana"
-                            value={obj.text}
-                            onChange={e => updObj(p.id, obj.id, e.target.value)}
-                            style={{ flex: 1, fontSize: 12 }}
-                          />
-                          {getObjs(p.id).length > 1 && (
-                            <button onClick={() => remObj(p.id, obj.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, padding: '0 2px', lineHeight: 1 }}>×</button>
-                          )}
-                        </div>
-                      ))}
-                      <button onClick={() => addObj(p.id)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', paddingLeft: 22, marginTop: 2 }}>
-                        + agregar objetivo
-                      </button>
-                    </div>
-                  ))}
+                    {orphanItems.length > 0 && orphanItems.map(renderThisWeekRow)}
+                  </div>
                 </ClientSection>
-              ))}
+              );
+            })}
 
-              {/* GENERAL */}
-              {(extras.length > 0 || clientGroups.length > 0) && (
-                <ClientSection cliente="General" colorIdx={clientGroups.length} defaultOpen={false}>
+            {hasGeneral && (
+              <ClientSection cliente="General" colorIdx={clientNames.length} defaultOpen={false}
+                count={(lastWeekGeneral.length + thisWeekGeneral.length) || null}>
+                {lastWeekGeneral.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={SECTION_LABEL}>Semana pasada · {fmtWeek(lastMonday)}</div>
+                    {lastWeekGeneral.map(renderLastWeekRow)}
+                  </div>
+                )}
+                <div>
+                  <div style={SECTION_LABEL}>Esta semana · {fmtWeek(thisMonday)}</div>
+                  {thisWeekGeneral.map(renderThisWeekRow)}
                   {extras.map((ex, i) => (
                     <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <span style={{ color: 'var(--ink-3)', fontSize: 13, flexShrink: 0 }}>○</span>
@@ -493,126 +578,25 @@ export function RIPPage({ projects }) {
                     style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', paddingLeft: 22, marginTop: 2 }}>
                     + agregar objetivo general
                   </button>
-                </ClientSection>
-              )}
+                </div>
+              </ClientSection>
+            )}
 
-              {meetingError && (
-                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{meetingError}</div>
-              )}
-              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="btn btn-accent" onClick={handleSaveMeeting} disabled={savingMeeting || !hasAnyObjective}>
-                  {savingMeeting ? 'Guardando…' : 'Guardar reunión'}
-                </button>
+            {(saveError || moveError) && (
+              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>
+                {saveError || moveError}
               </div>
+            )}
+            <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+              {savedAt && (
+                <span style={{ fontSize: 11, color: '#00A440', fontFamily: 'var(--font-mono)' }}>✓ Guardado {savedAt}</span>
+              )}
+              <button className="btn btn-accent" onClick={handleSave} disabled={saving}>
+                {saving ? 'Guardando…' : 'Guardar cambios'}
+              </button>
             </div>
           </div>
-        ) : (
-          /* ── Semana actual editable ── */
-          <div className="card">
-            <div className="card-h">
-              <span className="card-t">Esta semana</span>
-              <span className="card-sub">Semana del {fmtWeek(thisMonday)}</span>
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                {editingLdpWeek === thisMonday ? (
-                  <>
-                    <input
-                      list="ldp-list-edit"
-                      className="input"
-                      autoFocus
-                      value={ldpByWeek[thisMonday] ?? ''}
-                      onChange={e => setWeekLdp(thisMonday, e.target.value)}
-                      onBlur={() => setEditingLdpWeek(null)}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingLdpWeek(null); }}
-                      style={{ fontSize: 11, padding: '3px 8px', width: 160 }}
-                    />
-                    <datalist id="ldp-list-edit">
-                      {ldpOptions.map(l => <option key={l} value={l} />)}
-                    </datalist>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 12, color: ldpByWeek[thisMonday] ? 'var(--ink-2)' : 'var(--ink-3)', fontWeight: ldpByWeek[thisMonday] ? 500 : 400 }}>
-                      {ldpByWeek[thisMonday] || 'Sin responsable'}
-                    </span>
-                    <button
-                      onClick={() => setEditingLdpWeek(thisMonday)}
-                      title="Editar responsable"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 12, padding: '2px 4px', lineHeight: 1 }}
-                    >✏</button>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="card-b">
-              {groupEntriesByCliente(thisWeekEntries, projectMap).map(([cliente, items], ci) => (
-                <ClientSection key={cliente} cliente={cliente} colorIdx={ci} defaultOpen={false} count={items.length}>
-                  {items.map(e => {
-                    const key  = e._rowIdx ?? e._localId;
-                    const edit = weekEdits[key] ?? { estado: e.estado, comentarios: e.comentarios };
-                    const done = edit.estado === 'Hecho';
-                    const nope = edit.estado === 'No hecho';
-                    return (
-                      <div key={key} style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 10,
-                        padding: '10px 14px', borderRadius: 8, marginBottom: 8,
-                        background: done ? 'rgba(0,164,64,0.06)' : nope ? 'rgba(239,92,67,0.06)' : 'oklch(0.975 0.002 250)',
-                        border: `1px solid ${done ? 'rgba(0,164,64,0.25)' : nope ? 'rgba(239,92,67,0.25)' : 'oklch(0.91 0.005 250)'}`,
-                        transition: 'all 0.15s',
-                      }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>{e.proyecto}</span>
-                            <span style={{ fontSize: 13, fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--ink-3)' : 'var(--ink)' }}>
-                              {e.objetivo}
-                            </span>
-                          </div>
-                          <input className="input" placeholder="Comentario (opcional)"
-                            value={edit.comentarios ?? ''}
-                            onChange={ev => setWeekEdits(w => ({ ...w, [key]: { ...w[key], comentarios: ev.target.value } }))}
-                            style={{ fontSize: 11, padding: '4px 8px' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
-                          {['Hecho', 'No hecho', 'Pendiente'].map(opt => (
-                            <button key={opt}
-                              onClick={() => setWeekEdits(w => ({ ...w, [key]: { ...w[key], estado: opt } }))}
-                              style={{
-                                padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
-                                cursor: 'pointer', border: '1.5px solid', whiteSpace: 'nowrap',
-                                borderColor: edit.estado === opt
-                                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#d97706')
-                                  : 'oklch(0.85 0.01 250)',
-                                background: edit.estado === opt
-                                  ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#fde68a')
-                                  : 'transparent',
-                                color: edit.estado === opt
-                                  ? (opt === 'Pendiente' ? '#92400e' : '#fff')
-                                  : 'var(--ink-3)',
-                                transition: 'all 0.15s',
-                              }}>
-                              {opt === 'Hecho' ? '✓' : opt === 'No hecho' ? '✗' : '○'} {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </ClientSection>
-              ))}
-              {weekError && (
-                <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{weekError}</div>
-              )}
-              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
-                {weekSavedAt && (
-                  <span style={{ fontSize: 11, color: '#00A440', fontFamily: 'var(--font-mono)' }}>✓ Guardado {weekSavedAt}</span>
-                )}
-                <button className="btn btn-accent" onClick={handleSaveWeek} disabled={savingWeek}>
-                  {savingWeek ? 'Guardando…' : 'Guardar cambios'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* ── Historial ── */}
         {historyWeeks.length > 0 && (
@@ -621,7 +605,7 @@ export function RIPPage({ projects }) {
               <span className="card-t">Historial</span>
               <span className="card-sub">{historyWeeks.length} {historyWeeks.length === 1 ? 'semana' : 'semanas'} anteriores</span>
             </div>
-            {historyWeeks.map(([fecha, items], wIdx) => {
+            {historyWeeks.map(([fecha, items]) => {
               const done  = items.filter(e => e.estado === 'Hecho').length;
               const total = items.length;
               const pend  = items.filter(e => e.estado === 'Pendiente').length;
