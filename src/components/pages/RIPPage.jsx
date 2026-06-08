@@ -126,7 +126,6 @@ function ClientSection({ cliente, colorIdx, children, defaultOpen = true, count 
 
 export function RIPPage({ projects }) {
   const today      = new Date();
-  const isMonday   = today.getDay() === 1;
   const thisMonday = getMondayStr(today);
   const lastMonday = prevMondayStr(thisMonday);
 
@@ -148,11 +147,11 @@ export function RIPPage({ projects }) {
   const [savingMeeting, setSavingMeeting] = useState(false);
   const [meetingError,  setMeetingError]  = useState(null);
 
-  // --- revisión (lunes) ---
-  const [reviews,      setReviews]      = useState({});
-  const [savingReview, setSavingReview] = useState(false);
-  const [reviewError,  setReviewError]  = useState(null);
-  const [reviewSaved,  setReviewSaved]  = useState(false);
+  // --- revisión semana anterior ---
+  const [reviews,       setReviews]       = useState({});
+  const [savingReview,  setSavingReview]  = useState(false);
+  const [reviewError,   setReviewError]   = useState(null);
+  const [reviewSavedAt, setReviewSavedAt] = useState(null);
 
   // --- edición semana actual ---
   const [weekEdits,   setWeekEdits]   = useState({});
@@ -198,14 +197,14 @@ export function RIPPage({ projects }) {
   const grouped         = groupByFecha(entries);
   const thisWeekEntries = entries.filter(e => e.fecha === thisMonday);
   const lastWeekEntries = entries.filter(e => e.fecha === lastMonday);
-  const pendingReview   = lastWeekEntries.filter(e => e.estado === 'Pendiente');
   const hasThisWeek     = entries.some(e => e.fecha === thisMonday);
 
-  // inicializar revisiones
+  // inicializar revisiones (precargadas con el estado/comentario actual, editables en cualquier momento)
   useEffect(() => {
     const init = {};
-    pendingReview.forEach(e => { init[e._rowIdx ?? e._localId] = { estado: '', comentarios: '' }; });
+    lastWeekEntries.forEach(e => { init[e._rowIdx ?? e._localId] = { estado: e.estado, comentarios: e.comentarios }; });
     setReviews(init);
+    setReviewSavedAt(null);
   }, [entries]);
 
   // inicializar edits semana actual
@@ -259,10 +258,10 @@ export function RIPPage({ projects }) {
   async function handleSaveReview() {
     setSavingReview(true); setReviewError(null);
     try {
-      const updates = pendingReview.map(e => {
+      const updates = lastWeekEntries.map(e => {
         const key = e._rowIdx ?? e._localId;
         const r   = reviews[key] ?? {};
-        return { entry: e, estado: r.estado || 'No hecho', comentarios: r.comentarios || '' };
+        return { entry: e, estado: r.estado || e.estado, comentarios: r.comentarios ?? e.comentarios ?? '' };
       });
       if (useLocal) {
         const stored = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
@@ -278,7 +277,7 @@ export function RIPPage({ projects }) {
         ));
         await loadEntries();
       }
-      setReviewSaved(true);
+      setReviewSavedAt(new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
     } catch (err) { setReviewError(err.message); }
     finally { setSavingReview(false); }
   }
@@ -343,9 +342,9 @@ export function RIPPage({ projects }) {
           </div>
         )}
 
-        {/* ── Revisión semana anterior (solo lunes) ── */}
-        {pendingReview.length > 0 && !reviewSaved && (() => {
-          const byCliente = groupEntriesByCliente(pendingReview, projectMap);
+        {/* ── Revisión semana anterior (editable en cualquier momento) ── */}
+        {lastWeekEntries.length > 0 && (() => {
+          const byCliente = groupEntriesByCliente(lastWeekEntries, projectMap);
           return (
             <div className="card">
               <div className="card-h" style={{ background: 'oklch(0.97 0.01 250)', borderRadius: '10px 10px 0 0', margin: '-1px -1px 0', padding: '14px 20px' }}>
@@ -369,16 +368,22 @@ export function RIPPage({ projects }) {
                               <span style={{ fontSize: 13, fontWeight: 500 }}>{e.objetivo}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                              {['Hecho', 'No hecho'].map(opt => (
+                              {['Hecho', 'No hecho', 'Pendiente'].map(opt => (
                                 <button key={opt} onClick={() => setReviews(r => ({ ...r, [key]: { ...r[key], estado: opt } }))}
                                   style={{
                                     padding: '4px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
                                     cursor: 'pointer', border: '2px solid',
-                                    borderColor: rev.estado === opt ? (opt === 'Hecho' ? '#00A440' : '#ef5c43') : 'oklch(0.85 0.01 250)',
-                                    background: rev.estado === opt ? (opt === 'Hecho' ? '#00A440' : '#ef5c43') : 'transparent',
-                                    color: rev.estado === opt ? '#fff' : 'var(--ink-2)',
+                                    borderColor: rev.estado === opt
+                                      ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#d97706')
+                                      : 'oklch(0.85 0.01 250)',
+                                    background: rev.estado === opt
+                                      ? (opt === 'Hecho' ? '#00A440' : opt === 'No hecho' ? '#ef5c43' : '#fde68a')
+                                      : 'transparent',
+                                    color: rev.estado === opt
+                                      ? (opt === 'Pendiente' ? '#92400e' : '#fff')
+                                      : 'var(--ink-2)',
                                     transition: 'all 0.15s',
-                                  }}>{opt === 'Hecho' ? '✓ Hecho' : '✗ No hecho'}</button>
+                                  }}>{opt === 'Hecho' ? '✓ Hecho' : opt === 'No hecho' ? '✗ No hecho' : '○ Pendiente'}</button>
                               ))}
                             </div>
                           </div>
@@ -395,7 +400,10 @@ export function RIPPage({ projects }) {
                 {reviewError && (
                   <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, background: 'var(--bad-soft)', color: 'var(--bad)', fontSize: 12 }}>{reviewError}</div>
                 )}
-                <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+                  {reviewSavedAt && (
+                    <span style={{ fontSize: 11, color: '#00A440', fontFamily: 'var(--font-mono)' }}>✓ Guardado {reviewSavedAt}</span>
+                  )}
                   <button className="btn btn-accent" onClick={handleSaveReview} disabled={savingReview}>
                     {savingReview ? 'Guardando…' : 'Guardar revisión'}
                   </button>
