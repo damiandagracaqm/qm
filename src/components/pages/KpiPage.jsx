@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useRef } from 'react';
 
 const ESTADOS_TERMINALES = new Set(['Cancelado', 'Entregado', 'Entregado a NQN', 'Entregado parcialmente', 'Stand by', 'Sin empezar']);
 const ESTADOS_ENTREGADO  = new Set(['Entregado', 'Entregado a NQN', 'Entregado parcialmente']);
@@ -89,62 +89,186 @@ function CapacidadChart({ ldps, weeks }) {
   );
 }
 
-function fmtDashVal(val) {
+function capFirst(s) {
+  if (!s || typeof s !== 'string') return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function isPctLike(val) {
+  return typeof val === 'number' && !Number.isInteger(val) && val > -2 && val < 10;
+}
+
+function fmtDashVal(val, header, isFirst) {
   if (val === null || val === undefined || val === '') return '—';
+  if (isFirst && typeof val === 'string') return capFirst(val);
   if (typeof val === 'number') {
     if (Number.isInteger(val)) return val.toLocaleString('es-AR');
-    // Decimales entre 0 y 9.99 probablemente son porcentajes (0.757 → 75.7%)
-    if (val > 0 && val < 10) return `${(val * 100).toFixed(1)}%`;
+    if (isPctLike(val)) return `${(val * 100).toFixed(1)}%`;
     return val.toLocaleString('es-AR', { maximumFractionDigits: 1 });
   }
   return String(val);
 }
 
+function kpiKey(header) {
+  return String(header).toLowerCase().replace(/[\s_\-]/g, '');
+}
+
+function ColTip({ tip }) {
+  const ref = useRef();
+  const [pos, setPos] = useState(null);
+  return (
+    <span
+      ref={ref}
+      className="col-tip"
+      onMouseEnter={() => {
+        const r = ref.current.getBoundingClientRect();
+        setPos({ x: r.left + r.width / 2, y: r.top });
+      }}
+      onMouseLeave={() => setPos(null)}
+    >
+      i
+      {pos && (
+        <div style={{
+          position: 'fixed',
+          left: pos.x,
+          top: pos.y - 8,
+          transform: 'translateX(-50%) translateY(-100%)',
+          background: 'var(--ink)',
+          color: '#fff',
+          fontSize: 11,
+          fontWeight: 400,
+          fontFamily: 'var(--font-sans)',
+          whiteSpace: 'pre-line',
+          lineHeight: 1.5,
+          padding: '7px 10px',
+          borderRadius: 6,
+          maxWidth: 240,
+          pointerEvents: 'none',
+          zIndex: 9999,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+        }}>
+          {tip}
+        </div>
+      )}
+    </span>
+  );
+}
+
+const KPI_TOOLTIPS = {
+  kpi1: 'Hs consumidas ÷ Hs cotizadas\nVerde si < 90% (ahorro ≥ 10%)\nRojo si ≥ 90%',
+  kpi2: 'Retraso promedio en días\nal momento de entrega\nVerde si ≤ 25 días',
+  kpi3: 'Presupuesto ejecutado ÷ Presupuesto aprobado\nVerde si ≤ 100%\nRojo si supera 100%',
+};
+
+function colTooltip(header) {
+  const h = kpiKey(header);
+  for (const [key, tip] of Object.entries(KPI_TOOLTIPS)) {
+    if (h.includes(key)) return tip;
+  }
+  return null;
+}
+
+function cellColor(val, header) {
+  if (val === null || val === undefined || typeof val !== 'number') return null;
+  const h = kpiKey(header);
+
+  // KPI2: retraso en días (entero) — rojo si > 25 días
+  if (h.includes('kpi2')) {
+    if (val > 25) return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
+    return { color: 'var(--ok)', bg: 'var(--ok-soft)' };
+  }
+
+  // El resto solo aplica a valores tipo porcentaje (0.xx)
+  if (!isPctLike(val)) return null;
+
+  // KPI1: Hs Cons/Cot — verde si < 90% (ahorro ≥ 10%)
+  if (h.includes('kpi1')) {
+    if (val < 0.90) return { color: 'var(--ok)',  bg: 'var(--ok-soft)' };
+    return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
+  }
+
+  // KPI3: presupuesto consumido — rojo solo si supera 100%
+  if (h.includes('kpi3')) {
+    if (val > 1.0) return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
+    return { color: 'var(--ok)', bg: 'var(--ok-soft)' };
+  }
+
+  // genérico: mayor es mejor
+  if (val >= 0.8) return { color: 'var(--ok)',   bg: 'var(--ok-soft)' };
+  if (val >= 0.6) return { color: 'var(--warn)',  bg: 'var(--warn-soft)' };
+  return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
+}
+
 function DashTable({ title, table }) {
   if (!table?.data?.length) return null;
   const firstCol = table.headers[0];
+  const dataRows = table.data.filter(row => !String(row[firstCol] ?? '').toLowerCase().includes('total'));
+  const totalRow = table.data.find(row => String(row[firstCol] ?? '').toLowerCase().includes('total'));
   return (
     <div className="card">
       <div className="card-h">
         <span className="card-t">{title}</span>
-        <span className="card-sub">{table.data.length - 1} meses · fuente: Dashboard Excel</span>
+        <span className="card-sub">{dataRows.length} meses · fuente: Dashboard Excel</span>
       </div>
       <div className="card-b" style={{ padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {table.headers.map(h => (
-                <th key={h} style={{
-                  padding: '8px 16px', textAlign: h === firstCol ? 'left' : 'center',
-                  fontSize: 11, fontWeight: 600, color: 'var(--ink-2)',
-                  borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
-                }}>{h}</th>
-              ))}
+              {table.headers.map(h => {
+                const tip = colTooltip(h);
+                return (
+                  <th key={h} style={{
+                    padding: '8px 16px', textAlign: h === firstCol ? 'left' : 'center',
+                    fontSize: 11, fontWeight: 600, color: 'var(--ink-2)',
+                    borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap',
+                  }}>
+                    {h}
+                    {tip && <ColTip tip={tip} />}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {table.data.map((row, i) => {
-              const isTotal = String(row[firstCol] ?? '').toLowerCase().includes('total');
-              return (
-                <tr key={i} style={{
-                  background: isTotal ? 'oklch(0.96 0.003 250)' : 'transparent',
-                  fontWeight: isTotal ? 600 : 400,
-                  borderTop: isTotal ? '1px solid var(--line)' : 'none',
-                }}>
-                  {table.headers.map((h, j) => (
+            {dataRows.map((row, i) => (
+              <tr key={i} style={{ borderBottom: i < dataRows.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                {table.headers.map((h, j) => {
+                  const val = row[h];
+                  const clr = j > 0 ? cellColor(val, h) : null;
+                  return (
                     <td key={h} style={{
                       padding: '9px 16px',
-                      borderBottom: i < table.data.length - 1 && !isTotal ? '1px solid var(--line)' : 'none',
                       textAlign: j === 0 ? 'left' : 'center',
                       fontFamily: j === 0 ? 'inherit' : 'var(--font-mono)',
                       fontSize: j === 0 ? 13 : 12,
                     }}>
-                      {fmtDashVal(row[h])}
+                      {clr ? (
+                        <span style={{
+                          color: clr.color, background: clr.bg,
+                          padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+                        }}>
+                          {fmtDashVal(val, h, j === 0)}
+                        </span>
+                      ) : fmtDashVal(val, h, j === 0)}
                     </td>
-                  ))}
-                </tr>
-              );
-            })}
+                  );
+                })}
+              </tr>
+            ))}
+            {totalRow && (
+              <tr style={{ background: 'oklch(0.96 0.003 250)', fontWeight: 600, borderTop: '2px solid var(--line)' }}>
+                {table.headers.map((h, j) => (
+                  <td key={h} style={{
+                    padding: '9px 16px',
+                    textAlign: j === 0 ? 'left' : 'center',
+                    fontFamily: j === 0 ? 'inherit' : 'var(--font-mono)',
+                    fontSize: j === 0 ? 13 : 12,
+                  }}>
+                    {fmtDashVal(totalRow[h], h, j === 0)}
+                  </td>
+                ))}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -155,6 +279,26 @@ function DashTable({ title, table }) {
 export function KpiPage({ projects, capacidadData, dashboardData }) {
   const activos    = useMemo(() => projects.filter(p => !ESTADOS_TERMINALES.has(p.estado)), [projects]);
   const entregados = useMemo(() => projects.filter(p => ESTADOS_ENTREGADO.has(p.estado)),   [projects]);
+
+  const currentYear = String(new Date().getFullYear());
+  const [entYear, setEntYear] = useState(currentYear);
+
+  const yearsDisponibles = useMemo(() => {
+    const s = new Set(entregados.map(p => (p.finReal || p.finEst || '').split('-')[0]).filter(y => /^\d{4}$/.test(y)));
+    return Array.from(s).sort().reverse();
+  }, [entregados]);
+
+  const entregadosAnio = useMemo(() =>
+    entYear === 'Histórico'
+      ? entregados
+      : entregados.filter(p => (p.finReal || p.finEst || '').startsWith(entYear)),
+    [entregados, entYear]
+  );
+
+  const fracEq = useMemo(() => {
+    const totalHH = entregadosAnio.reduce((a, p) => a + (p.hhPlanTotal || 0), 0);
+    return totalHH / 2500;
+  }, [entregadosAnio]);
 
   const TODAY     = new Date().toISOString().split('T')[0];
   const enTiempo  = activos.filter(p => p.finEst && p.finEst !== '—' && p.finEst >= TODAY).length;
@@ -207,18 +351,43 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
         </div>
         <div className="kpi-cell">
           <span className="kpi-label">Entregados</span>
-          <span className="kpi-value">{entregados.length}</span>
-          <span className="kpi-trend">total histórico</span>
+          <span className="kpi-value">{entregadosAnio.length}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <select
+              value={entYear}
+              onChange={e => setEntYear(e.target.value)}
+              style={{
+                fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-3)',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                padding: 0, appearance: 'auto',
+              }}
+            >
+              {yearsDisponibles.map(y => <option key={y} value={y}>{y}</option>)}
+              <option value="Histórico">Histórico</option>
+            </select>
+          </div>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-label">HH planificadas</span>
-          <span className="kpi-value" style={{ fontSize: 28 }}>{totalHHPlan.toLocaleString()}</span>
-          <span className="kpi-trend">proyectos activos</span>
+          <span className="kpi-label">Frac. Equiv.</span>
+          <span className="kpi-value" style={{ fontSize: 28 }}>{fracEq.toFixed(1)}</span>
+          <span className="kpi-trend">{entYear} · 2500 HH = 1 FE</span>
         </div>
-        <div className="kpi-cell">
-          <span className="kpi-label">HH consumidas</span>
-          <span className="kpi-value" style={{ fontSize: 28 }}>{Math.round(totalHHReal).toLocaleString()}</span>
-          <span className="kpi-trend">{totalHHPlan > 0 ? Math.round(totalHHReal / totalHHPlan * 100) : 0}% del plan</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-3)' }}>
+          Proyectos activos — {activos.length} en planta
+        </span>
+        <div style={{ display: 'flex', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 32px', background: 'var(--surface)', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-3)', marginBottom: 4 }}>HH planificadas</div>
+            <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{totalHHPlan.toLocaleString()}</div>
+          </div>
+          <div style={{ padding: '14px 32px', background: 'var(--surface)', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-3)', marginBottom: 4 }}>HH consumidas</div>
+            <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', fontFeatureSettings: '"tnum"' }}>{Math.round(totalHHReal).toLocaleString()}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>{totalHHPlan > 0 ? Math.round(totalHHReal / totalHHPlan * 100) : 0}% del plan</div>
+          </div>
         </div>
       </div>
 
@@ -319,7 +488,7 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
       {/* ── Tablas del Dashboard Excel ─────────────────── */}
       {dashboardData?.equiposEntregados && (
         <DashTable
-          title="Equipos entregados — últimos 4 meses"
+          title="Equipos entregados"
           table={dashboardData.equiposEntregados}
         />
       )}

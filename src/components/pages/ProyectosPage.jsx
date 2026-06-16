@@ -157,6 +157,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
   const [search, setSearch]             = useState('');
   const [filterEstado, setFilterEstado] = useState('Todos');
   const [clienteSel, setClienteSel]     = useState('Todos');
+  const [ldpSel, setLdpSel]             = useState('Todos');
   const [expanded, setExpanded]         = useState(new Set());
 
   function toggleExpanded(key) {
@@ -177,13 +178,23 @@ export function ProyectosPage({ projects, onOpenDetail }) {
     return ['Todos', ...Array.from(set).sort()];
   }, [activos]);
 
+  const ldps = useMemo(() => {
+    const base = clienteSel === 'Todos' ? activos : activos.filter(p => p.cliente === clienteSel);
+    const set = new Set(base.map(p => p.ldp).filter(Boolean));
+    return ['Todos', ...Array.from(set).sort()];
+  }, [activos, clienteSel]);
+
   const activosFiltrados = useMemo(() =>
-    clienteSel === 'Todos' ? activos : activos.filter(p => p.cliente === clienteSel),
-    [activos, clienteSel]
+    activos
+      .filter(p => clienteSel === 'Todos' || p.cliente === clienteSel)
+      .filter(p => ldpSel === 'Todos' || p.ldp === ldpSel),
+    [activos, clienteSel, ldpSel]
   );
   const entregadosFiltrados = useMemo(() =>
-    clienteSel === 'Todos' ? entregados : entregados.filter(p => p.cliente === clienteSel),
-    [entregados, clienteSel]
+    entregados
+      .filter(p => clienteSel === 'Todos' || p.cliente === clienteSel)
+      .filter(p => ldpSel === 'Todos' || p.ldp === ldpSel),
+    [entregados, clienteSel, ldpSel]
   );
 
   const TODAY     = new Date().toISOString().split('T')[0];
@@ -196,6 +207,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
              : filterEstado === 'En proceso'  ? projects.filter(p => !ESTADOS_TERMINALES.has(p.estado))
              : projects.filter(p => p.estado === filterEstado);
     if (clienteSel !== 'Todos') base = base.filter(p => p.cliente === clienteSel);
+    if (ldpSel !== 'Todos') base = base.filter(p => p.ldp === ldpSel);
     if (search) {
       const q = search.toLowerCase();
       base = base.filter(p =>
@@ -206,7 +218,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
       );
     }
     return base;
-  }, [projects, filterEstado, clienteSel, search]);
+  }, [projects, filterEstado, clienteSel, ldpSel, search]);
 
   // Cliente → LDP grouping
   const clienteGroups = useMemo(() => {
@@ -264,6 +276,12 @@ export function ProyectosPage({ projects, onOpenDetail }) {
     return { count: proys.length, hasCritical: proys.some(p => p.desvio > 30) };
   }
 
+  function ldpStatsFor(l) {
+    const base = clienteSel === 'Todos' ? activos : activos.filter(p => p.cliente === clienteSel);
+    const proys = l === 'Todos' ? base : base.filter(p => p.ldp === l);
+    return { count: proys.length, hasCritical: proys.some(p => p.desvio > 30) };
+  }
+
   return (
     <div className="page-body">
 
@@ -316,7 +334,7 @@ export function ProyectosPage({ projects, onOpenDetail }) {
             <button
               key={c}
               className={`filter-btn${isActive ? ' active' : ''}`}
-              onClick={() => setClienteSel(c)}
+              onClick={() => { setClienteSel(c); setLdpSel('Todos'); }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
               {c}
@@ -353,6 +371,42 @@ export function ProyectosPage({ projects, onOpenDetail }) {
           </button>
         ))}
       </div>
+
+      {/* ── Toolbar fila 3: filtro por LDP ────────────── */}
+      {ldps.length > 2 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: 2 }}>
+            LDP
+          </span>
+          {ldps.map(l => {
+            const { count, hasCritical } = ldpStatsFor(l);
+            const isActive = ldpSel === l;
+            return (
+              <button
+                key={l}
+                className={`filter-btn${isActive ? ' active' : ''}`}
+                onClick={() => setLdpSel(l)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                {l}
+                <span style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 10,
+                  background: isActive ? 'rgba(255,255,255,0.18)' : 'var(--surface-2)',
+                  color: isActive ? '#fff' : 'var(--ink-3)',
+                  padding: '1px 5px', borderRadius: 3,
+                }}>{count}</span>
+                {hasCritical && (
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: isActive ? 'oklch(0.72 0.18 25)' : 'var(--bad)',
+                    display: 'inline-block', flexShrink: 0,
+                  }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Tabla de proyectos ────────────────────────── */}
       <div className="card">
