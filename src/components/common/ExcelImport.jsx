@@ -75,6 +75,7 @@ function mapRowsToProjects(rows) {
   const idxFinReal   = col('entrega final');
   const idxReplans   = col('reprogramaci');
   const idxCausas    = col('causa');
+  const idxFeq       = col('feq');
 
   const projects = rows.slice(1)
     .map((row, i) => {
@@ -100,6 +101,7 @@ function mapRowsToProjects(rows) {
         kpi2Pct:     idxKpi2 !== -1      ? parsePercent(row[idxKpi2])      : null,
         budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
         finReal:     parseExcelDate(idxFinReal !== -1 ? row[idxFinReal] : null),
+        feq:         idxFeq !== -1 ? (Number(row[idxFeq]) || null) : null,
         _rowIdx: i + 1,  // posición 0-based en rows[] (0 = header), usada para write-back
         hhPlan: {
           ing:    idxPlanIng   !== -1 ? (Number(row[idxPlanIng])   || 0) : 0,

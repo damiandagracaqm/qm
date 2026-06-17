@@ -296,6 +296,8 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
   );
 
   const fracEq = useMemo(() => {
+    const hasFeq = entregadosAnio.some(p => p.feq != null);
+    if (hasFeq) return entregadosAnio.reduce((a, p) => a + (p.feq ?? 0), 0);
     const totalHH = entregadosAnio.reduce((a, p) => a + (p.hhPlanTotal || 0), 0);
     return totalHH / 2500;
   }, [entregadosAnio]);
