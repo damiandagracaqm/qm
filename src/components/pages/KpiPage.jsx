@@ -156,7 +156,7 @@ function ColTip({ tip }) {
 
 const KPI_TOOLTIPS = {
   kpi1: 'Hs consumidas ÷ Hs cotizadas\nVerde si < 90% (ahorro ≥ 10%)\nRojo si ≥ 90%',
-  kpi2: 'Retraso promedio en días\nal momento de entrega\nVerde si ≤ 25 días',
+  kpi2: 'Días de desvío al momento de entrega\n+ positivo → se retrasó (rojo)\n− negativo → se adelantó (verde)\n0 → entregado en fecha (verde)',
   kpi3: 'Presupuesto ejecutado ÷ Presupuesto aprobado\nVerde si ≤ 100%\nRojo si supera 100%',
 };
 
@@ -172,9 +172,9 @@ function cellColor(val, header) {
   if (val === null || val === undefined || typeof val !== 'number') return null;
   const h = kpiKey(header);
 
-  // KPI2: retraso en días (entero) — rojo si > 25 días
+  // KPI2: días de desvío — positivo = atraso (rojo), negativo/cero = adelanto o en fecha (verde)
   if (h.includes('kpi2')) {
-    if (val > 25) return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
+    if (val > 0) return { color: 'var(--bad)', bg: 'var(--bad-soft)' };
     return { color: 'var(--ok)', bg: 'var(--ok-soft)' };
   }
 
