@@ -98,13 +98,18 @@ function isPctLike(val) {
   return typeof val === 'number' && !Number.isInteger(val) && val > -2 && val < 10;
 }
 
+function isPctHeader(header) {
+  const h = kpiKey(header);
+  return h.includes('kpi1') || h.includes('kpi3') || h.includes('presupuesto') || h.includes('%');
+}
+
 function fmtDashVal(val, header, isFirst) {
   if (val === null || val === undefined || val === '') return '—';
   if (isFirst && typeof val === 'string') return capFirst(val);
   if (typeof val === 'number') {
     if (Number.isInteger(val)) return val.toLocaleString('es-AR');
-    if (isPctLike(val)) return `${(val * 100).toFixed(1)}%`;
-    return val.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+    if (isPctLike(val) && isPctHeader(header)) return `${(val * 100).toFixed(1)}%`;
+    return val.toLocaleString('es-AR', { maximumFractionDigits: 2 });
   }
   return String(val);
 }
