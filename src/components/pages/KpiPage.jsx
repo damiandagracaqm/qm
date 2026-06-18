@@ -299,7 +299,7 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
     const hasFeq = entregadosAnio.some(p => p.feq != null);
     if (hasFeq) return entregadosAnio.reduce((a, p) => a + (p.feq ?? 0), 0);
     const totalHH = entregadosAnio.reduce((a, p) => a + (p.hhPlanTotal || 0), 0);
-    return totalHH / 2500;
+    return totalHH / 2700;
   }, [entregadosAnio]);
 
   const TODAY     = new Date().toISOString().split('T')[0];
@@ -372,7 +372,7 @@ export function KpiPage({ projects, capacidadData, dashboardData }) {
         <div className="kpi-cell">
           <span className="kpi-label">Frac. Equiv.</span>
           <span className="kpi-value" style={{ fontSize: 28 }}>{fracEq.toFixed(1)}</span>
-          <span className="kpi-trend">{entYear} · 2500 HH = 1 FE</span>
+          <span className="kpi-trend">{entYear} · 2700 HH = 1 FE</span>
         </div>
       </div>
 
