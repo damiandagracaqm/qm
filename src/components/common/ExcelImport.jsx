@@ -1,6 +1,12 @@
 import { useRef } from 'react';
 import * as XLSX from 'xlsx';
 
+function parseFeq(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'));
+  return isNaN(n) ? null : n;  // permite 0 como valor válido
+}
+
 function parsePercent(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'string') {
@@ -75,7 +81,9 @@ function mapRowsToProjects(rows) {
   const idxFinReal   = col('entrega final');
   const idxReplans   = col('reprogramaci');
   const idxCausas    = col('causa');
-  const idxFeq       = col('feq');
+  // Búsqueda exacta para Feq — evita que col('feq') con includes() pise otra columna
+  const idxFeq       = headers.indexOf('feq');
+  console.log(`[Feq] idx=${idxFeq}  header="${rows[0][idxFeq]}"  primeros valores:`, rows.slice(1, 5).map(r => r[idxFeq]));
 
   const projects = rows.slice(1)
     .map((row, i) => {
@@ -101,7 +109,7 @@ function mapRowsToProjects(rows) {
         kpi2Pct:     idxKpi2 !== -1      ? parsePercent(row[idxKpi2])      : null,
         budgetPct:   idxBudgetPct !== -1 ? parsePercent(row[idxBudgetPct]) : null,
         finReal:     parseExcelDate(idxFinReal !== -1 ? row[idxFinReal] : null),
-        feq:         idxFeq !== -1 ? (Number(row[idxFeq]) || null) : null,
+        feq:         idxFeq !== -1 ? parseFeq(row[idxFeq]) : null,
         _rowIdx: i + 1,  // posición 0-based en rows[] (0 = header), usada para write-back
         hhPlan: {
           ing:    idxPlanIng   !== -1 ? (Number(row[idxPlanIng])   || 0) : 0,
